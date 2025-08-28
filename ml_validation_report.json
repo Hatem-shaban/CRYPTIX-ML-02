@@ -1,0 +1,42 @@
+{
+  "success": true,
+  "validated_models": [
+    "trend",
+    "signal",
+    "regime"
+  ],
+  "total_models": 3,
+  "validation_timestamp": "2025-08-24T15:43:31.653077",
+  "data_samples": 158765,
+  "results": {
+    "trend": {
+      "success": true,
+      "accuracy": 0.5351305388467231,
+      "auc_score": 0.546063982638692,
+      "true_positive_rate": 0.5048026958082701,
+      "predicted_positive_rate": 0.6836519383995213,
+      "validation_samples": 31753,
+      "model_type": "trend_prediction"
+    },
+    "signal": {
+      "success": true,
+      "accuracy": 0.6460176991150443,
+      "auc_score": 0.5438498178066135,
+      "true_signal_rate": 0.2240103297326237,
+      "predicted_signal_rate": 0.23629263376688817,
+      "validation_samples": 31753,
+      "model_type": "signal_success"
+    },
+    "regime": {
+      "success": true,
+      "accuracy": 0.7570938179069694,
+      "validation_samples": 31753,
+      "regime_classes": [
+        "downtrend",
+        "sideways",
+        "uptrend"
+      ],
+      "model_type": "market_regime"
+    }
+  }
+}
