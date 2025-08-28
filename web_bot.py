@@ -163,8 +163,8 @@ def setup_csv_logging():
     ]
     
     signal_headers = [
-    'timestamp', 'cairo_time', 'signal', 'symbol', 'price', 'rsi', 'macd', 'macd_trend',
-    'sentiment', 'sma5', 'sma20', 'reason'
+        'timestamp', 'cairo_time', 'signal', 'symbol', 'price', 'rsi', 'macd', 'macd_trend',
+        'sentiment', 'sma5', 'sma20', 'reason'
     ]
     
     performance_headers = [
@@ -588,8 +588,8 @@ bot_status = {
     'hunting_mode': False,  # Aggressive opportunity hunting mode
     'last_volatility_check': None,  # Track when we last checked volatility
     'adaptive_intervals': {
-        'QUIET': 1800,       # 30 minutes during quiet markets (increased from 5min)
-        'NORMAL': 900,      # 15 minutes during normal markets (increased from 5min)
+        'QUIET': 3600,       # 60 minutes during quiet markets (increased from 30min)
+        'NORMAL': 1800,      # 30 minutes during normal markets (increased from 5min)
         'VOLATILE': 900,     # 15 minutes during volatile markets (increased from 3min)
         'EXTREME': 600,      # 10 minutes during extreme volatility (increased from 1min)
         'HUNTING': 300       # 5 minutes when hunting opportunities (increased from 30s)
@@ -4116,26 +4116,24 @@ def home():
                     <span class="info-label">Last Scan</span>
                     <span class="info-value">{{ status.last_scan_time.strftime('%H:%M:%S') if status.last_scan_time else 'Never' }}</span>
                 </div>
-                {% set balance_summary = get_account_balances_summary() %}
-                {% if not balance_summary.get('error') %}
-                    <div class="info-item">
-                        <span class="info-label">Total Balance</span>
-                        <span class="info-value">${{ "{:,.2f}".format(balance_summary.total_usdt_value) }}</span>
-                    </div>
-                    {% for asset, info in balance_summary.balances.items() %}
-                        {% if info.total > 0 %}
-                            <div class="info-item">
-                                <span class="info-label">{{ asset }} Balance</span>
-                                <span class="info-value">{{ "{:.8f}".format(info.total) }}</span>
-                            </div>
-                        {% endif %}
-                    {% endfor %}
-                {% else %}
-                    <div class="info-item">
-                        <span class="info-label">Balance Error</span>
-                        <span class="info-value">Unable to fetch balances</span>
-                    </div>
-                {% endif %}
+                <div class="info-item">
+                    <span class="info-label">Current Symbol</span>
+                    <span class="info-value">{{ status.current_symbol }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Current Price</span>
+                    <span class="info-value">${{ "{:,.2f}".format(status.last_price) if status.last_price else 'N/A' }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Total Revenue</span>
+                    <span class="info-value" style="color: {{ '#28a745' if status.trading_summary.total_revenue > 0 else '#dc3545' if status.trading_summary.total_revenue < 0 else '#6c757d' }}">
+                        ${{ "{:,.2f}".format(status.trading_summary.total_revenue) }}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Win Rate</span>
+                    <span class="info-value">{{ "{:.1f}".format(status.trading_summary.win_rate) }}%</span>
+                </div>
             </div>
             
             <!-- Strategy Section -->
@@ -4192,7 +4190,7 @@ def home():
     </script>
 </body>
 </html>
-    """, status=bot_status, current_time=format_cairo_time(), time_remaining=get_time_remaining_for_next_signal(), strategy_desc=strategy_desc, balance_summary=get_account_balances_summary())
+    """, status=bot_status, current_time=format_cairo_time(), time_remaining=get_time_remaining_for_next_signal(), strategy_desc=strategy_desc)
 
 
 @app.route('/start')
@@ -5318,18 +5316,13 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         
         # Log the trade
         log_trade_to_csv(
-            {
-                "signal": "SELL_PARTIAL",
-                "symbol": symbol,
-                "quantity": sell_quantity,
-                "price": avg_price,
-                "value": total_value,
-                "fee": total_fee,
-                "order_id": result["order_id"],
-                "status": "success",
-                "timestamp": result["timestamp"]
-            },
-            {
+            action="SELL_PARTIAL",
+            symbol=symbol,
+            quantity=sell_quantity,
+            price=avg_price,
+            value=total_value,
+            fee=total_fee,
+            additional_data={
                 'percentage': percentage,
                 'reason': reason,
                 'order_type': 'partial_sell'
