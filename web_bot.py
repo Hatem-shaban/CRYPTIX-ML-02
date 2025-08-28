@@ -3225,6 +3225,42 @@ def trading_loop():
                     time.sleep(30)  # Wait before retrying
                     continue
             
+            # Check for profit-taking opportunities in existing positions
+            try:
+                print("\n💰 Checking existing positions for profit-taking opportunities...")
+                
+                # Get current balances
+                assets_with_balance = []
+                account_info = client.get_account() if client else None
+                
+                if account_info:
+                    for balance in account_info['balances']:
+                        asset = balance['asset']
+                        free_balance = float(balance['free'])
+                        
+                        if free_balance > 0 and asset != 'USDT':
+                            symbol = f"{asset}USDT"
+                            ticker = client.get_ticker(symbol=symbol)
+                            current_price = float(ticker['lastPrice'])
+                            usdt_value = free_balance * current_price
+                            
+                            df = fetch_data(symbol=symbol, interval="5m", limit=100)
+                            if df is not None:
+                                rsi = float(df['rsi'].iloc[-1])
+                                
+                                if rsi >= 70:  # Overbought condition
+                                    print(f"🎯 Found overbought position: {symbol}")
+                                    print(f"   💰 Balance: {free_balance:.8f} {asset}")
+                                    print(f"   💵 Value: ${usdt_value:.2f}")
+                                    print(f"   📈 RSI: {rsi:.1f}")
+                                    
+                                    # Execute SELL directly on overbought condition
+                                    print(f"⚡ Executing profit-taking SELL for {symbol} (RSI: {rsi:.1f})")
+                                    result = execute_trade("SELL", symbol)
+                                    print(f"📊 Result: {result}")
+            except Exception as e:
+                print(f"⚠️ Error checking profit-taking opportunities: {e}")
+            
             # Intelligent scan decision
             should_scan, scan_reason = should_scan_now()
             
