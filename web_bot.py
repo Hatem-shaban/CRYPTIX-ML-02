@@ -3120,6 +3120,64 @@ def trading_loop():
         bot_status['last_scan_time'] = get_cairo_time()  # Record scan time
         print(f"✅ Startup scan completed - found {len(scan_results) if scan_results else 0} opportunities")
         
+        # Generate signals for top opportunities at startup
+        if scan_results:
+            print("\n🎯 Analyzing top opportunities from startup scan...")
+            max_startup_targets = 3  # Analyze top 3 opportunities
+            signals_generated = 0
+            
+            for i, opportunity in enumerate(scan_results[:max_startup_targets]):
+                current_symbol = opportunity['symbol']
+                current_score = opportunity.get('score', 0)
+                
+                print(f"\n📊 Analyzing startup target {i+1}: {current_symbol} (Score: {current_score:.1f})")
+                
+                # Get fresh data for signal generation
+                df = fetch_data(symbol=current_symbol, interval="5m", limit=100)
+                if df is not None:
+                    signal = signal_generator(df, current_symbol)
+                    current_price = float(df['close'].iloc[-1])
+                    
+                    print(f"💡 Generated signal: {signal} @ ${current_price:.4f}")
+                    
+                    # Log signal to CSV with startup context
+                    indicators = {
+                        'symbol': current_symbol,
+                        'rsi': float(df['rsi'].iloc[-1]),
+                        'macd': float(df['macd'].iloc[-1]),
+                        'macd_trend': df['macd_trend'].iloc[-1],
+                        'opportunity_score': current_score
+                    }
+                    log_signal_to_csv(signal, current_price, indicators, "STARTUP_SCAN")
+                    
+                    # Update pair tracking
+                    if current_symbol not in bot_status['monitored_pairs']:
+                        bot_status['monitored_pairs'][current_symbol] = {
+                            'last_signal': signal,
+                            'last_price': current_price,
+                            'rsi': float(df['rsi'].iloc[-1]),
+                            'macd': {
+                                'macd': float(df['macd'].iloc[-1]),
+                                'signal': float(df['macd_signal'].iloc[-1]),
+                                'trend': df['macd_trend'].iloc[-1]
+                            },
+                            'last_update': format_cairo_time(),
+                            'opportunity_score': current_score
+                        }
+                    
+                    # Update main status with best target
+                    if i == 0:
+                        bot_status.update({
+                            'current_symbol': current_symbol,
+                            'last_signal': signal,
+                            'last_price': current_price,
+                            'last_update': format_cairo_time()
+                        })
+                    
+                    signals_generated += 1
+            
+            print(f"\n✨ Startup signal generation complete - Analyzed {signals_generated} opportunities")
+        
     except Exception as e:
         print(f"⚠️ Startup scan failed: {e}")
     
