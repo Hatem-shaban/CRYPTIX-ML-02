@@ -1,0 +1,15 @@
+flask
+python-binance
+pandas
+python-dotenv
+textblob
+snscrape
+psutil
+pytz
+requests
+numpy
+scipy
+scikit-learn>=1.3.0
+joblib>=1.3.0
+TA-Lib
+ccxt

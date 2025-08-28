@@ -1,0 +1,18 @@
+timestamp,cairo_time,error_type,error_message,function_name,severity,bot_status
+2025-08-28T05:03:35.559333,2025-08-28 08:03:35 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-28T05:03:35.556765,2025-08-28 08:03:35 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T18:54:23.769679,2025-08-27 21:54:23 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T18:54:23.767141,2025-08-27 21:54:23 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T17:53:35.855947,2025-08-27 20:53:35 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T17:53:35.854993,2025-08-27 20:53:35 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T16:52:48.973390,2025-08-27 19:52:48 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T16:52:48.971001,2025-08-27 19:52:48 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T15:52:00.968547,2025-08-27 18:52:00 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T15:52:00.967545,2025-08-27 18:52:00 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T14:50:52.270390,2025-08-27 17:50:52 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T14:50:52.268076,2025-08-27 17:50:52 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T13:50:02.657039,2025-08-27 16:50:02 EEST,REBALANCING_ERROR,Error in position rebalancing: cannot access local variable 'notify_error' where it is not associated with a value,execute_position_rebalancing,ERROR,True
+2025-08-27T13:50:02.655511,2025-08-27 16:50:02 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: argument of type 'float' is not iterable | argument of type 'float' is not iterable,sell_partial_position,ERROR,True
+2025-08-27T13:19:09.253088,2025-08-27 16:19:09 EEST,STRATEGY_CHANGE,Strategy changed from ADAPTIVE to ML_ONLY,set_strategy,INFO,False
+2025-08-27T09:11:33.508054,2025-08-27 12:11:33 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: notify_trade() got an unexpected keyword argument 'action',sell_partial_position,ERROR,True
+2025-08-27T06:42:02.958163,2025-08-27 09:42:02 EEST,PARTIAL_SELL_ERROR,Error in partial sell for SOLUSDT: notify_trade() got an unexpected keyword argument 'action',sell_partial_position,ERROR,True

@@ -1,0 +1,70 @@
+[
+  {
+    "timestamp": "2025-08-24T14:28:39.160400",
+    "results": {
+      "trend_model": {
+        "status": "success",
+        "accuracy": 0.53,
+        "cv_mean": 0.5700000000000001,
+        "cv_std": 0.01695582495781315,
+        "features_used": 11,
+        "samples_trained": 400,
+        "model_path": "rf_price_trend_model.pkl"
+      },
+      "regime_model": {
+        "status": "success",
+        "accuracy": 0.99,
+        "cv_mean": 0.9875,
+        "cv_std": 0.011180339887498959,
+        "features_used": 7,
+        "samples_trained": 400,
+        "model_path": "rf_market_regime_model.pkl"
+      },
+      "pattern_model": {
+        "status": "success",
+        "accuracy": 1.0,
+        "cv_mean": 0.9936170212765958,
+        "cv_std": 0.008510638297872348,
+        "features_used": 4,
+        "samples_trained": 468,
+        "model_path": "rf_pattern_recognition_model.pkl"
+      }
+    },
+    "config": {
+      "min_samples": 100,
+      "test_size": 0.2,
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  {
+    "timestamp": "2025-08-24T14:53:10.911006",
+    "data_samples": 158766,
+    "data_period": "2024-08-24 12:00:00 to 2025-08-24 10:00:00",
+    "results": {
+      "trend": {
+        "success": false,
+        "error": "Input X contains infinity or a value too large for dtype('float64')."
+      },
+      "signal": {
+        "success": false,
+        "error": "Input X contains infinity or a value too large for dtype('float64')."
+      },
+      "regime": {
+        "success": false,
+        "error": "Input X contains infinity or a value too large for dtype('float64')."
+      }
+    },
+    "models_trained": [],
+    "training_duration": "completed"
+  },
+  {
+    "timestamp": "2025-08-24T15:19:25.017710",
+    "data_samples": 158766,
+    "data_period": "2024-08-24 12:00:00 to 2025-08-24 11:00:00",
+    "results": {
+      "trend": {
+        "success": true,
+        "train_accuracy": 0.7903347715176519,
+        "test_accuracy": 0.5318385085343579,
+        "features_used": 
