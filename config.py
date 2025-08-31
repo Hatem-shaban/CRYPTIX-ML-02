@@ -98,38 +98,12 @@ VWAP = {
 
 ADX = {
     'period': 14,
-    'min_trend_strict': 25,
-    'min_trend_moderate': 20
+    'min_trend': 20
 }
 
 # Statistical Parameters
 ZSCORE_THRESHOLD = 2.0  # Z-score threshold for statistical signals
 VAR_CONFIDENCE = 0.95   # Value at Risk confidence level
-
-# Strategy Thresholds
-STRICT_STRATEGY = {
-    'min_signals': 5,      # Minimum signals required for trade
-    'volatility_max': 0.3, # Maximum allowed volatility
-    'trend_strength': 0.02, # Minimum trend strength required
-    # New indicator gates
-    'ema_alignment': True,     # Require price > EMA50 > EMA200 for buys (reverse for sells)
-    'adx_min': 25,             # Minimum ADX to confirm trend
-    'stoch_buy_max': 30,       # Stochastic K must be <= for BUY
-    'stoch_sell_min': 70,      # Stochastic K must be >= for SELL
-    'use_vwap': True           # Require price relative to VWAP (>= for buy, <= for sell)
-}
-
-MODERATE_STRATEGY = {
-    'min_signals': 3,
-    'volatility_max': 0.4,
-    'trend_strength': 0.015,
-    # Softer indicator gates
-    'ema_alignment': False,
-    'adx_min': 20,
-    'stoch_buy_max': 40,
-    'stoch_sell_min': 60,
-    'use_vwap': True
-}
 
 ADAPTIVE_STRATEGY = {
     'score_threshold': 30,

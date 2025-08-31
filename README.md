@@ -56,30 +56,21 @@ For detailed configuration instructions, see [ENVIRONMENT_SETUP.md](ENVIRONMENT_
 ## 🎯 Features
 
 - **Advanced Technical Analysis**: RSI, MACD, EMA, Stochastic, ADX, VWAP
-- **Multiple Trading Strategies**: Strict, Moderate, and Adaptive
+- **Adaptive Trading Strategy**: Smart strategy that adapts to market conditions
 - **Risk Management**: Position sizing, stop-loss, daily limits
 - **Machine Learning**: Price trend prediction models
 - **Telegram Notifications**: Real-time trade alerts and performance updates
 - **Web Interface**: Monitor and control the bot via web dashboard
 - **Intelligent Timing**: Market regime detection and optimal entry timing
 
-## 📊 Trading Strategies
-
-### Strict Strategy
-- Minimum 5 signals required
-- EMA alignment required
-- ADX trend confirmation
-- Conservative approach
-
-### Moderate Strategy  
-- Minimum 3 signals required
-- Softer indicator gates
-- Balanced risk/reward
+## 📊 Trading Strategy
 
 ### Adaptive Strategy
 - Composite scoring system
 - Volatility adjustment
 - Trend following capabilities
+- Market regime detection
+- Dynamic threshold adjustment
 
 ## 🛡️ Risk Management
 
