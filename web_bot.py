@@ -48,6 +48,15 @@ except ImportError as e:
     market_intelligence = None
     ml_predictor = None
 
+# Import smart signal optimizer
+try:
+    from smart_signal_optimizer import get_signal_optimizer
+    SMART_OPTIMIZER_AVAILABLE = True
+    print("✅ Smart Signal Optimizer loaded successfully")
+except ImportError as e:
+    SMART_OPTIMIZER_AVAILABLE = False
+    print(f"⚠️ Smart Signal Optimizer not available: {e}")
+
 # Import Telegram notifications
 try:
     from telegram_notify import (
@@ -1696,16 +1705,20 @@ def adaptive_strategy(df, symbol, indicators):
         'vwap': 0.0
     }
 
-    # RSI (scaled by distance from thresholds)
+    # RSI (scaled by distance from thresholds) - Enhanced for buy low/sell high
     rsi_weight = weights.get('rsi', 0.2)
     if rsi < rsi_buy:
-        # Normalize by distance to buy threshold
+        # Stronger signal for deeper oversold conditions (buy lower)
         rsi_norm = (rsi_buy - rsi) / max(1.0, rsi_buy)
-        components['rsi'] = 100 * rsi_weight * rsi_norm
+        # Boost score for very oversold conditions
+        oversold_boost = 1.5 if rsi < 25 else (1.3 if rsi < 30 else 1.0)
+        components['rsi'] = 100 * rsi_weight * rsi_norm * oversold_boost
     elif rsi > rsi_sell:
-        # Normalize by distance to sell threshold
+        # Stronger signal for deeper overbought conditions (sell higher)
         rsi_norm = (rsi - rsi_sell) / max(1.0, (100.0 - rsi_sell))
-        components['rsi'] = -100 * rsi_weight * rsi_norm
+        # Boost score for very overbought conditions
+        overbought_boost = 1.5 if rsi > 75 else (1.3 if rsi > 70 else 1.0)
+        components['rsi'] = -100 * rsi_weight * rsi_norm * overbought_boost
     # else stays 0 near neutral band
 
     # MACD (fixed contribution based on trend)
@@ -1750,13 +1763,73 @@ def adaptive_strategy(df, symbol, indicators):
             deficit_ratio = max(0.0, (adx_min - adx) / max(1.0, adx_min))
             components['adx'] = -100 * adx_w * 0.2 * deficit_ratio
 
-    # VWAP relation
+    # VWAP relation - Enhanced for buy low/sell high optimization
     vwap_w = weights.get('vwap', 0.15)
     if vwap is not None:
+        vwap_distance = (current_price - vwap) / vwap
         if current_price >= vwap:
-            components['vwap'] = 100 * vwap_w * 0.4
+            # Above VWAP - good for selling, moderate for buying
+            if abs(vwap_distance) > 0.02:  # Significantly above VWAP
+                components['vwap'] = 100 * vwap_w * 0.6  # Strong sell signal
+            else:
+                components['vwap'] = 100 * vwap_w * 0.2  # Weak buy signal
         else:
-            components['vwap'] = -100 * vwap_w * 0.4
+            # Below VWAP - good for buying, bad for selling
+            if abs(vwap_distance) > 0.02:  # Significantly below VWAP
+                components['vwap'] = 100 * vwap_w * 0.6  # Strong buy signal (price is low)
+            else:
+                components['vwap'] = 100 * vwap_w * 0.2  # Weak buy signal
+
+    # Price Range Position Analysis (NEW) - Ensure we buy low and sell high
+    try:
+        # Calculate recent price range (24h equivalent)
+        recent_high = df['high'].tail(48).max() if 'high' in df.columns else current_price * 1.02
+        recent_low = df['low'].tail(48).min() if 'low' in df.columns else current_price * 0.98
+        price_range = recent_high - recent_low
+        
+        if price_range > 0:
+            # Calculate where current price sits in the range (0 = bottom, 1 = top)
+            range_position = (current_price - recent_low) / price_range
+            
+            # Reward buying near the bottom of the range
+            if range_position < 0.3:  # In bottom 30% of range
+                components['price_position'] = 100 * 0.1 * (0.3 - range_position) / 0.3  # Max +10 points
+            elif range_position > 0.7:  # In top 30% of range
+                components['price_position'] = -100 * 0.1 * (range_position - 0.7) / 0.3  # Max -10 points
+            else:
+                components['price_position'] = 0  # Neutral zone
+        else:
+            components['price_position'] = 0
+    except Exception:
+        components['price_position'] = 0
+
+    # Volume Confirmation Analysis (NEW) - Validate signals with volume
+    try:
+        if 'volume' in df.columns:
+            recent_volume = df['volume'].tail(20)
+            avg_volume = recent_volume.mean()
+            current_volume = recent_volume.iloc[-1]
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+            
+            # Volume surge confirmation for signals
+            if volume_ratio > 2.0:  # Strong volume surge
+                # Determine if it's buying or selling volume based on price action
+                price_change = (current_price - df['close'].tail(5).iloc[0]) / df['close'].tail(5).iloc[0]
+                
+                if price_change > 0.01:  # Price rising with volume - good for sells, bad for buys
+                    components['volume_confirmation'] = -5  # Slight negative for buying
+                elif price_change < -0.01:  # Price falling with volume - good for buys, bad for sells
+                    components['volume_confirmation'] = 5  # Slight positive for buying
+                else:
+                    components['volume_confirmation'] = 0
+            elif volume_ratio < 0.5:  # Low volume - reduces signal strength
+                components['volume_confirmation'] = -3
+            else:
+                components['volume_confirmation'] = 0
+        else:
+            components['volume_confirmation'] = 0
+    except Exception:
+        components['volume_confirmation'] = 0
 
     # Sum base score and apply regime-based scaling to keep breakdown consistent
     score = sum(components.values())
@@ -2100,6 +2173,127 @@ def signal_generator(df, symbol="BTCUSDT"):
                 print(f"   ⚠️ Signal filtering error: {filter_error}")
                 # Continue with original signal if filtering fails
         
+        # Smart Signal Optimization (NEW - for maximum profitability)
+        if SMART_OPTIMIZER_AVAILABLE and signal != "HOLD":
+            print(f"\n🧠 Applying smart profitability optimization...")
+            
+            try:
+                # Get current balances for optimization
+                current_balance = {}
+                if client:
+                    account_info = client.get_account()
+                    for balance in account_info['balances']:
+                        if float(balance['free']) > 0:
+                            current_balance[balance['asset']] = float(balance['free'])
+                
+                signal_optimizer = get_signal_optimizer()
+                optimization_result = signal_optimizer.optimize_entry_exit(
+                    symbol, signal, df, indicators, current_balance
+                )
+                
+                print(f"   Original Signal: {signal}")
+                print(f"   Optimized Signal: {optimization_result['optimized_signal']}")
+                print(f"   Optimization Confidence: {optimization_result['confidence']:.2f}")
+                print(f"   Optimization Reason: {optimization_result['reason']}")
+                
+                if 'factors' in optimization_result:
+                    factors = optimization_result['factors']
+                    print(f"   Profitability Score: {factors.get('profitability_score', 0):.2f}")
+                    print(f"   Timing Score: {factors.get('timing_score', 0):.2f}")
+                    print(f"   Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
+                    print(f"   Momentum Score: {factors.get('momentum_score', 0):.2f}")
+                
+                if optimization_result['should_wait']:
+                    print(f"   📊 Optimization suggests waiting: {optimization_result.get('timing_details', {}).get('wait_reason', 'Better timing expected')}")
+                
+                # Update signal with optimized result
+                signal = optimization_result['optimized_signal']
+                reason = f"Smart Optimizer: {optimization_result['reason']}"
+                
+                # Store optimization metrics in bot status
+                bot_status['last_optimization'] = {
+                    'confidence': optimization_result['confidence'],
+                    'factors': optimization_result.get('factors', {}),
+                    'should_wait': optimization_result['should_wait']
+                }
+                
+            except Exception as optimizer_error:
+                print(f"   ⚠️ Signal optimization error: {optimizer_error}")
+                # Continue with filtered signal if optimization fails
+        
+        # Smart Balance Validation (NEW) - Ensure we can actually execute the signal
+        if signal == "SELL":
+            print(f"\n💰 Validating balance for SELL signal...")
+            
+            try:
+                has_balance, available_balance, balance_msg = check_coin_balance(symbol)
+                
+                if not has_balance:
+                    print(f"   ❌ Cannot execute SELL - {balance_msg}")
+                    signal = "HOLD"
+                    reason = f"SELL blocked: {balance_msg}"
+                    
+                    # Log this for analysis
+                    log_signal_to_csv(signal, current_price, indicators, 
+                                    f"Strategy wanted SELL but {balance_msg}")
+                else:
+                    print(f"   ✅ Balance validated - {balance_msg}")
+                    
+                    # Additional profitability check for selling
+                    # Only sell if we're likely to be in profit
+                    try:
+                        base_asset = symbol[:-4] if symbol.endswith('USDT') else symbol.split('USDT')[0]
+                        
+                        # Check if we're in the upper part of recent range
+                        if 'high' in df.columns and 'low' in df.columns:
+                            recent_high = df['high'].tail(48).max()
+                            recent_low = df['low'].tail(48).min()
+                            price_range = recent_high - recent_low
+                            
+                            if price_range > 0:
+                                range_position = (current_price - recent_low) / price_range
+                                
+                                # Only sell if we're in upper part of range (selling high)
+                                if range_position < 0.4:  # In bottom 40% of range
+                                    print(f"   📊 Price in lower range ({range_position:.1%}) - holding for better price")
+                                    signal = "HOLD"
+                                    reason = f"Smart Hold: Price too low in range ({range_position:.1%}) - waiting to sell higher"
+                                else:
+                                    print(f"   📊 Price in upper range ({range_position:.1%}) - good time to sell")
+                    except Exception as range_error:
+                        print(f"   ⚠️ Range analysis error: {range_error}")
+                        
+            except Exception as balance_error:
+                print(f"   ⚠️ Balance validation error: {balance_error}")
+        
+        elif signal == "BUY":
+            print(f"\n💰 Validating conditions for BUY signal...")
+            
+            try:
+                # Check if we're buying low (in lower part of recent range)
+                if 'high' in df.columns and 'low' in df.columns:
+                    recent_high = df['high'].tail(48).max()
+                    recent_low = df['low'].tail(48).min()
+                    price_range = recent_high - recent_low
+                    
+                    if price_range > 0:
+                        range_position = (current_price - recent_low) / price_range
+                        
+                        # Prefer buying in lower part of range (buying low)
+                        if range_position > 0.6:  # In top 40% of range
+                            print(f"   📊 Price in upper range ({range_position:.1%}) - may wait for better entry")
+                            # Don't block but reduce confidence
+                            if 'Smart Optimizer:' in reason:
+                                reason += f" (Price high in range: {range_position:.1%})"
+                            else:
+                                reason += f" - Price high in range: {range_position:.1%}"
+                        else:
+                            print(f"   📊 Price in lower range ({range_position:.1%}) - good entry point")
+                            if 'Smart Optimizer:' in reason:
+                                reason += f" (Good entry: {range_position:.1%} in range)"
+            except Exception as buy_analysis_error:
+                print(f"   ⚠️ Buy analysis error: {buy_analysis_error}")
+        
         # Advanced ML Intelligence Analysis (if enabled and signal is not HOLD)
         if ENHANCED_MODULES_AVAILABLE and signal != "HOLD" and config.ML_ENABLED:
             print(f"\n🧠 Applying ML Intelligence Analysis...")
@@ -2201,102 +2395,70 @@ def signal_generator(df, symbol="BTCUSDT"):
             'last_strategy': strategy
         })
             
-        print(f"Strategy {strategy} generated signal: {signal} - {reason}")  # Debug log
+        print(f"Strategy {strategy} generated final signal: {signal} - {reason}")  # Debug log
         
-        # IMPORTANT: Check balance before allowing SELL signals
-        if signal == "SELL":
-            print(f"\n🔍 Checking if we have {symbol} balance for SELL order...")
-            has_balance, available_balance, balance_msg = check_coin_balance(symbol)
+        # Final Profitability Summary (NEW)
+        if signal != "HOLD":
+            print(f"\n📊 PROFITABILITY ANALYSIS SUMMARY:")
+            print(f"   Signal: {signal} for {symbol}")
+            print(f"   Current Price: ${current_price:.4f}")
             
-            if not has_balance:
-                print(f"❌ Cannot place SELL order: {balance_msg}")
-                signal = "HOLD"
-                reason = f"No balance to sell - {balance_msg}"
-                print(f"🔄 Signal changed from SELL to HOLD due to insufficient balance")
-                
-                # Log the balance-prevented sell signal
-                log_signal_to_csv(
-                    "HOLD",
-                    current_price,
-                    indicators,
-                    f"Strategy {strategy} wanted SELL but {balance_msg}"
-                )
-                
-                # Send Telegram notification about blocked sell signal
-                if TELEGRAM_AVAILABLE and getattr(config, 'TELEGRAM_SEND_SIGNALS', False):
-                    try:
-                        notify_signal("HOLD", symbol, current_price, indicators, 
-                                    f"SELL blocked - {balance_msg}")
-                    except Exception as telegram_error:
-                        print(f"Telegram balance notification failed: {telegram_error}")
-                
-                return signal
-            else:
-                print(f"✅ Balance check passed: {balance_msg}")
-                # Continue with original SELL signal
-        
-        # IMPORTANT: Check USDT balance before allowing BUY signals
-        if signal == "BUY":
+            # Show optimization metrics if available
+            if 'last_optimization' in bot_status:
+                opt_data = bot_status['last_optimization']
+                print(f"   Optimization Confidence: {opt_data.get('confidence', 0):.2f}")
+                if 'factors' in opt_data:
+                    factors = opt_data['factors']
+                    print(f"   - Profitability Score: {factors.get('profitability_score', 0):.2f}/1.0")
+                    print(f"   - Timing Score: {factors.get('timing_score', 0):.2f}/1.0")
+                    print(f"   - Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
+            
+            # Show signal quality if available
+            if 'last_signal_quality' in bot_status:
+                quality_data = bot_status['last_signal_quality']
+                print(f"   Signal Quality: {quality_data.get('quality_score', 0):.2f}/1.0")
+                print(f"   Filters Passed: {quality_data.get('filters_passed', 0)}/7")
+            
+            # Show price position analysis
             try:
-                if client:
-                    account_info = client.get_account()
-                    usdt_balance = 0
-                    for balance in account_info['balances']:
-                        if balance['asset'] == 'USDT':
-                            usdt_balance = float(balance['free'])
-                            break
+                if 'high' in df.columns and 'low' in df.columns:
+                    recent_high = df['high'].tail(48).max()
+                    recent_low = df['low'].tail(48).min()
+                    price_range = recent_high - recent_low
                     
-                    min_usdt_required = 10.0  # Minimum $10 USDT required
-                    if usdt_balance < min_usdt_required:
-                        print(f"❌ Insufficient USDT for BUY order: ${usdt_balance:.2f} < ${min_usdt_required}")
-                        signal = "HOLD"
-                        reason = f"Insufficient USDT balance: ${usdt_balance:.2f}"
-                        print(f"🔄 Signal changed from BUY to HOLD due to insufficient USDT")
+                    if price_range > 0:
+                        range_position = (current_price - recent_low) / price_range
+                        print(f"   Price Position: {range_position:.1%} in 48h range (${recent_low:.4f} - ${recent_high:.4f})")
                         
-                        # Log the balance-prevented buy signal
-                        log_signal_to_csv(
-                            "HOLD",
-                            current_price,
-                            indicators,
-                            f"Strategy {strategy} wanted BUY but insufficient USDT: ${usdt_balance:.2f}"
-                        )
-                        
-                        # Send Telegram notification about blocked buy signal
-                        if TELEGRAM_AVAILABLE and getattr(config, 'TELEGRAM_SEND_SIGNALS', False):
-                            try:
-                                notify_signal("HOLD", symbol, current_price, indicators, 
-                                            f"BUY blocked - insufficient USDT: ${usdt_balance:.2f}")
-                            except Exception as telegram_error:
-                                print(f"Telegram balance notification failed: {telegram_error}")
-                        
-                        return signal
-                    else:
-                        print(f"✅ USDT balance check passed: ${usdt_balance:.2f} available")
-                else:
-                    print("⚠️ Client not available for USDT balance check")
-            except Exception as e:
-                print(f"⚠️ Error checking USDT balance: {e}")
-                # Continue with BUY signal if balance check fails
-        
-        # Enforce risk lock AFTER computing signal
-        if risk_locked and signal != "HOLD":
-            reason = f"Risk lock (consecutive losses {consecutive_losses}/{config.MAX_CONSECUTIVE_LOSSES})"
-            signal = "HOLD"
-        # Log strategy decision to signals log (single place)
-        log_signal_to_csv(signal, current_price, indicators, f"Strategy {strategy} - {reason}")
-
-        # Send Telegram notification for trading signals (configurable)
-        if TELEGRAM_AVAILABLE and signal in ["BUY", "SELL"] and getattr(config, 'TELEGRAM_SEND_SIGNALS', False):
-            try:
-                notify_signal(signal, symbol, current_price, indicators, reason)
-            except Exception as telegram_error:
-                print(f"Telegram signal notification failed: {telegram_error}")
-
+                        if signal == "BUY" and range_position < 0.4:
+                            print(f"   ✅ GOOD BUY: Buying in lower part of range")
+                        elif signal == "BUY" and range_position > 0.6:
+                            print(f"   ⚠️ HIGH BUY: Buying in upper part of range")
+                        elif signal == "SELL" and range_position > 0.6:
+                            print(f"   ✅ GOOD SELL: Selling in upper part of range")
+                        elif signal == "SELL" and range_position < 0.4:
+                            print(f"   ⚠️ LOW SELL: Selling in lower part of range")
+            except Exception as summary_error:
+                print(f"   ⚠️ Price analysis error: {summary_error}")
+            
+            print(f"   Final Reason: {reason}")
+            print(f"=" * 60)
+    
     except Exception as e:
         error_msg = f"Error in strategy execution: {str(e)}"
         print(error_msg)  # Debug log
         log_error_to_csv(error_msg, "STRATEGY_ERROR", "signal_generator", "ERROR")
         signal, reason = "HOLD", f"Strategy error: {str(e)}"
+    
+    # Final signal logging and notifications
+    log_signal_to_csv(signal, current_price, indicators, f"Strategy {strategy} - {reason}")
+    
+    # Send Telegram notification for trading signals (configurable)
+    if TELEGRAM_AVAILABLE and signal in ["BUY", "SELL"] and getattr(config, 'TELEGRAM_SEND_SIGNALS', False):
+        try:
+            notify_signal(signal, symbol, current_price, indicators, reason)
+        except Exception as telegram_error:
+            print(f"Telegram signal notification failed: {telegram_error}")
     
     return signal
 
