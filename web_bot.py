@@ -582,7 +582,7 @@ bot_status = {
     'macd': {'macd': 0, 'signal': 0, 'trend': 'NEUTRAL'},
     'sentiment': 'neutral',
     'monitored_pairs': {},  # Track all monitored pairs' status
-    'trading_strategy': 'ADAPTIVE',  # Current trading strategy (STRICT, MODERATE, ADAPTIVE)
+    'trading_strategy': 'ADAPTIVE',  # Current trading strategy (ADAPTIVE only)
     'next_signal_time': None,  # Track when next signal will be generated
     'signal_interval': 300,  # Base signal generation interval in seconds (5 minutes - adaptive)
     'market_regime': 'NORMAL',  # Current market regime (QUIET, NORMAL, VOLATILE, EXTREME)
@@ -1591,7 +1591,7 @@ def analyze_trading_pairs():
                 
                 # Apply volatility adjustment if configured
                 if config.ADAPTIVE_STRATEGY['volatility_adjustment']:
-                    score = base_score * (1 - (volatility/config.MODERATE_STRATEGY['volatility_max']))
+                    score = base_score * (1 - (volatility/0.4))  # Use default volatility max
                 else:
                     score = base_score
                 
@@ -1636,138 +1636,6 @@ def analyze_trading_pairs():
         log_error_to_csv(str(e), "PAIR_ANALYSIS", "analyze_trading_pairs", "ERROR")
         return {"symbol": "BTCUSDT", "signal": "HOLD", "score": 0}
 
-def strict_strategy(df, symbol, indicators):
-    """
-    Conservative trading strategy with strict entry/exit conditions
-    - Requires strong confirmation from multiple indicators
-    - Focuses on minimizing risk
-    - High threshold for entry/exit points
-    """
-    if df is None or len(df) < 30:
-        return "HOLD", "Insufficient data"
-        
-    # Extract indicators
-    rsi = indicators['rsi']
-    macd_trend = indicators['macd_trend']
-    sentiment = indicators['sentiment']
-    sma5 = indicators['sma5']
-    sma20 = indicators['sma20']
-    volatility = indicators['volatility']
-    current_price = indicators['current_price']
-    ema50 = indicators.get('ema50')
-    ema200 = indicators.get('ema200')
-    stoch_k = indicators.get('stoch_k')
-    vwap = indicators.get('vwap')
-    adx = indicators.get('adx')
-    
-    # Get strict strategy thresholds from config
-    strict_config = config.STRICT_STRATEGY
-    
-    # Strict buy conditions with configurable thresholds
-    buy_conditions = [
-        rsi < config.RSI_OVERSOLD,
-        macd_trend == "BULLISH",
-        sma5 > sma20,
-        sentiment == "bullish",
-        volatility < strict_config['volatility_max']
-    ]
-    # Apply advanced gates
-    if strict_config.get('ema_alignment') and (ema50 is not None and ema200 is not None):
-        buy_conditions.append(current_price > ema50 > ema200)
-    if strict_config.get('adx_min') and adx is not None:
-        buy_conditions.append(adx >= strict_config['adx_min'])
-    if strict_config.get('stoch_buy_max') and stoch_k is not None:
-        buy_conditions.append(stoch_k <= strict_config['stoch_buy_max'])
-    if strict_config.get('use_vwap') and vwap is not None:
-        buy_conditions.append(current_price >= vwap)
-
-    # Strict sell conditions
-    sell_conditions = [
-        rsi > config.RSI_OVERBOUGHT,
-        macd_trend == "BEARISH",
-        sma5 < sma20,
-        sentiment == "bearish",
-        volatility < strict_config['volatility_max']
-    ]
-    if strict_config.get('ema_alignment') and (ema50 is not None and ema200 is not None):
-        sell_conditions.append(current_price < ema50 < ema200)
-    if strict_config.get('adx_min') and adx is not None:
-        sell_conditions.append(adx >= strict_config['adx_min'])
-    if strict_config.get('stoch_sell_min') and stoch_k is not None:
-        sell_conditions.append(stoch_k >= strict_config['stoch_sell_min'])
-    if strict_config.get('use_vwap') and vwap is not None:
-        sell_conditions.append(current_price <= vwap)
-    
-    if all(buy_conditions):
-        return "BUY", "Strong buy signal with multiple confirmations"
-    elif all(sell_conditions):
-        return "SELL", "Strong sell signal with multiple confirmations"
-    
-    return "HOLD", "Waiting for stronger signals"
-
-def moderate_strategy(df, symbol, indicators):
-    """
-    Balanced trading strategy with moderate entry/exit conditions
-    - More frequent trades
-    - Balanced risk/reward
-    - Moderate thresholds from configuration
-    """
-    if df is None or len(df) < 30:
-        return "HOLD", "Insufficient data"
-        
-    # Extract indicators
-    rsi = indicators['rsi']
-    macd_trend = indicators['macd_trend']
-    sentiment = indicators['sentiment']
-    sma5 = indicators['sma5']
-    sma20 = indicators['sma20']
-    ema50 = indicators.get('ema50')
-    ema200 = indicators.get('ema200')
-    stoch_k = indicators.get('stoch_k')
-    vwap = indicators.get('vwap')
-    adx = indicators.get('adx')
-    
-    # Get moderate strategy config
-    moderate_config = config.MODERATE_STRATEGY
-    min_signals = moderate_config['min_signals']
-    
-    # Buy signals with configurable thresholds
-    buy_signals = 0
-    if rsi < config.RSI_OVERSOLD + 10: buy_signals += 1  # Less strict RSI
-    if macd_trend == "BULLISH": buy_signals += 2
-    if sma5 > sma20 and abs(sma5 - sma20)/sma20 > moderate_config['trend_strength']: buy_signals += 1
-    if sentiment == "bullish": buy_signals += 1
-    if moderate_config.get('ema_alignment') and (ema50 is not None and ema200 is not None) and (indicators['current_price'] > ema50 > ema200):
-        buy_signals += 1
-    if moderate_config.get('adx_min') and adx is not None and adx >= moderate_config['adx_min']:
-        buy_signals += 1
-    if moderate_config.get('stoch_buy_max') and stoch_k is not None and stoch_k <= moderate_config['stoch_buy_max']:
-        buy_signals += 1
-    if moderate_config.get('use_vwap') and vwap is not None and indicators['current_price'] >= vwap:
-        buy_signals += 1
-    
-    # Sell signals (less strict)
-    sell_signals = 0
-    if rsi > 60: sell_signals += 1  # Less strict RSI
-    if macd_trend == "BEARISH": sell_signals += 2
-    if sma5 < sma20: sell_signals += 1
-    if sentiment == "bearish": sell_signals += 1
-    if moderate_config.get('ema_alignment') and (ema50 is not None and ema200 is not None) and (indicators['current_price'] < ema50 < ema200):
-        sell_signals += 1
-    if moderate_config.get('adx_min') and adx is not None and adx >= moderate_config['adx_min']:
-        sell_signals += 1
-    if moderate_config.get('stoch_sell_min') and stoch_k is not None and stoch_k >= moderate_config['stoch_sell_min']:
-        sell_signals += 1
-    if moderate_config.get('use_vwap') and vwap is not None and indicators['current_price'] <= vwap:
-        sell_signals += 1
-    
-    if buy_signals >= 3:
-        return "BUY", f"Moderate buy signal ({buy_signals} confirmations)"
-    elif sell_signals >= 3:
-        return "SELL", f"Moderate sell signal ({sell_signals} confirmations)"
-    
-    return "HOLD", "Insufficient signals for trade"
-
 def adaptive_strategy(df, symbol, indicators):
     """
     Smart strategy that adapts based on market conditions using configuration parameters
@@ -1795,10 +1663,10 @@ def adaptive_strategy(df, symbol, indicators):
     # Get adaptive strategy settings
     adaptive_config = config.ADAPTIVE_STRATEGY
     
-    # Calculate market regime using config thresholds
-    is_high_volatility = volatility > config.MODERATE_STRATEGY['volatility_max']
+    # Calculate market regime using default thresholds
+    is_high_volatility = volatility > 0.4  # Default volatility max
     trend_strength = abs((sma5 - sma20) / sma20)
-    is_strong_trend = trend_strength > config.STRICT_STRATEGY['trend_strength']
+    is_strong_trend = trend_strength > 0.02  # Default trend strength
     
     # Adjust thresholds based on market conditions and current market regime
     regime = bot_status.get('market_regime', 'NORMAL')
@@ -2182,18 +2050,14 @@ def signal_generator(df, symbol="BTCUSDT"):
     
     # Use selected strategy with enhanced error handling
     try:
-        strategy = bot_status.get('trading_strategy', 'STRICT')
+        strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
         print(f"Using strategy: {strategy}")  # Debug log
         
-        if strategy == 'STRICT':
-            signal, reason = strict_strategy(df, symbol, indicators)
-        elif strategy == 'MODERATE':
-            signal, reason = moderate_strategy(df, symbol, indicators)
-        elif strategy == 'ADAPTIVE':
+        if strategy == 'ADAPTIVE':
             signal, reason = adaptive_strategy(df, symbol, indicators)
         else:
-            print(f"Unknown strategy {strategy}, defaulting to STRICT")  # Debug log
-            signal, reason = strict_strategy(df, symbol, indicators)  # Default to strict
+            print(f"Unknown strategy {strategy}, defaulting to ADAPTIVE")  # Debug log
+            signal, reason = adaptive_strategy(df, symbol, indicators)  # Default to adaptive
         
         # Enhanced Signal Filtering (if modules available)
         if ENHANCED_MODULES_AVAILABLE and signal != "HOLD":
@@ -3680,7 +3544,7 @@ def start_trading_bot():
         # Send Telegram notification for bot start
         if TELEGRAM_AVAILABLE:
             try:
-                current_strategy = bot_status.get('trading_strategy', 'STRICT')
+                current_strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
                 notify_bot_status("STARTED", f"Strategy: {current_strategy}")
             except Exception as telegram_error:
                 print(f"Telegram bot start notification failed: {telegram_error}")
@@ -3721,10 +3585,8 @@ def download_logs():
 @app.route('/')
 def home():
     # Get current strategy for display
-    current_strategy = bot_status.get('trading_strategy', 'STRICT')
+    current_strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
     strategy_descriptions = {
-        'STRICT': '🎯 Conservative strategy with strict rules to minimize risk',
-        'MODERATE': '⚖️ Balanced strategy for more frequent trading opportunities',
         'ADAPTIVE': '🧠 Smart strategy that adapts to market conditions'
     }
     strategy_desc = strategy_descriptions.get(current_strategy, '')
@@ -3984,10 +3846,8 @@ def home():
             line-height: 1.5;
         }
         
-        .strategy-buttons {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 10px;
+        .strategy-info {
+            display: block;
         }
         
         .strategy-btn {
@@ -4109,7 +3969,6 @@ def home():
         /* Responsive adjustments */
         @media (min-width: 481px) and (max-width: 768px) {
             .container { max-width: 480px; }
-            .strategy-buttons { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -4199,16 +4058,10 @@ def home():
             <div class="strategy-section">
                 <div class="section-title">🎯 Trading Strategy</div>
                 <div class="strategy-desc">{{ strategy_desc }}</div>
-                <div class="strategy-buttons">
-                    <a href="/strategy/strict" class="strategy-btn {{ 'active' if status.trading_strategy == 'STRICT' else '' }}">
-                        🎯 <span>Strict - Conservative Trading</span>
-                    </a>
-                    <a href="/strategy/moderate" class="strategy-btn {{ 'active' if status.trading_strategy == 'MODERATE' else '' }}">
-                        ⚖️ <span>Moderate - Balanced Approach</span>
-                    </a>
-                    <a href="/strategy/adaptive" class="strategy-btn {{ 'active' if status.trading_strategy == 'ADAPTIVE' else '' }}">
+                <div class="strategy-info">
+                    <div class="strategy-btn active">
                         🧠 <span>Adaptive - Smart & Dynamic</span>
-                    </a>
+                    </div>
                 </div>
             </div>
             
@@ -4306,8 +4159,8 @@ def force_scan():
 def set_strategy(name):
     """Switch trading strategy"""
     try:
-        if name.upper() in ['STRICT', 'MODERATE', 'ADAPTIVE']:
-            previous_strategy = bot_status.get('trading_strategy', 'STRICT')
+        if name.upper() in ['ADAPTIVE']:
+            previous_strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
             new_strategy = name.upper()
             
             # Update bot status
@@ -4315,20 +4168,20 @@ def set_strategy(name):
             
             # Log the strategy change
             log_error_to_csv(
-                f"Strategy changed from {previous_strategy} to {new_strategy}",
-                "STRATEGY_CHANGE",
+                f"Strategy confirmed as {new_strategy}",
+                "STRATEGY_CONFIRM",
                 "set_strategy",
                 "INFO"
             )
             
             # Print debug info
-            print(f"Strategy changed: {previous_strategy} -> {new_strategy}")
+            print(f"Strategy confirmed: {new_strategy}")
             print(f"Current bot status: {bot_status}")
             
             return redirect('/')
         else:
             log_error_to_csv(
-                f"Invalid strategy name: {name}",
+                f"Invalid strategy name: {name}. Only ADAPTIVE is supported.",
                 "STRATEGY_ERROR",
                 "set_strategy",
                 "ERROR"
