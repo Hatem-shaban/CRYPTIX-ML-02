@@ -23,7 +23,7 @@ git pull
 3. Wait 10-15 seconds
 
 ### Step 3: Test Your Site
-Visit: `https://cryptix.pythonanywhere.com`
+Visit: `https://cryptix.eu.pythonanywhere.com` (EU server)
 
 **It should work now!** 🎉
 

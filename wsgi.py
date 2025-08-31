@@ -10,6 +10,7 @@ import os
 
 # Add your project directory to the Python path
 # IMPORTANT: Update this path to match your actual PythonAnywhere location
+# For EU PythonAnywhere, the path structure is the same
 project_home = '/home/cryptix/CRYPTIX-ML-02'
 if project_home not in sys.path:
     sys.path.insert(0, project_home)

@@ -68,7 +68,9 @@ TELEGRAM_CHAT_ID=your_actual_chat_id
 8. Click **"Reload"**
 
 ## 🎯 Your Live URL
-`https://cryptix.pythonanywhere.com`
+`https://cryptix.eu.pythonanywhere.com` (EU server)
+
+**Important:** Since you're using EU PythonAnywhere, your URL will be `.eu.pythonanywhere.com` instead of the regular `.pythonanywhere.com`
 
 ## ✅ Post-Deployment Tests
 
@@ -81,9 +83,9 @@ TELEGRAM_CHAT_ID=your_actual_chat_id
 - [ ] ML predictions load
 
 ### Common URLs to Test:
-- `https://cryptix.pythonanywhere.com/` - Main dashboard
-- `https://cryptix.pythonanywhere.com/status` - Bot status
-- `https://cryptix.pythonanywhere.com/trade-history` - Trade history
+- `https://cryptix.eu.pythonanywhere.com/` - Main dashboard
+- `https://cryptix.eu.pythonanywhere.com/status` - Bot status
+- `https://cryptix.eu.pythonanywhere.com/trade-history` - Trade history
 
 ## 🚨 Troubleshooting
 
