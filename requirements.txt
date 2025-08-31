@@ -13,4 +13,3 @@ scikit-learn>=1.3.0
 joblib>=1.3.0
 TA-Lib
 ccxt
-serverless-wsgi

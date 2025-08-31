@@ -5682,7 +5682,7 @@ if __name__ == '__main__':
 
         # Configure Flask for production by default; override with FLASK_DEBUG=1
         flask_host = os.getenv('FLASK_HOST', '0.0.0.0')
-        flask_port = 10000
+        flask_port = int(os.getenv('PORT', 5000))  # Use PORT env var for cloud platforms, default to 5000
         flask_debug = str(os.getenv('FLASK_DEBUG', '0')).strip().lower() in ['1', 'true', 'yes', 'on']
         print(f"🌐 Starting Flask server on {flask_host}:{flask_port} (debug={'ON' if flask_debug else 'OFF'})")
         app.run(host=flask_host, port=flask_port, debug=flask_debug)
