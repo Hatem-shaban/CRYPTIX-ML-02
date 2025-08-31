@@ -176,6 +176,8 @@ PythonAnywhere provides MySQL databases for persistent storage.
 
 ---
 
-**🎯 Your app will be live at: `https://cryptix.pythonanywhere.com`**
+**🎯 Your app will be live at: `https://cryptix.eu.pythonanywhere.com`** (EU server)
+
+**Important Note:** Since you're using EU PythonAnywhere, your URLs and configurations will use the `.eu.pythonanywhere.com` domain instead of the regular `.pythonanywhere.com`
 
 Follow these steps and your CRYPTIX-ML bot will be running smoothly on PythonAnywhere!
