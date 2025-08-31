@@ -18,6 +18,7 @@ import zipfile
 import sys
 import json
 from datetime import datetime, timedelta
+from typing import Optional  # Add this import for Python version compatibility
 
 # Import enhanced trading modules
 try:
@@ -361,7 +362,7 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
         import traceback
         print(f"Stack trace: {traceback.format_exc()}")
 
-def log_daily_performance(date_dt: datetime | None = None):
+def log_daily_performance(date_dt: Optional[datetime] = None):
     """Compute and log daily performance for the given Cairo date.
     If date_dt is None, uses current Cairo date. Avoids duplicate rows for the same date.
     Metrics are computed from logs/trade_history.csv to ensure per-day accuracy.
