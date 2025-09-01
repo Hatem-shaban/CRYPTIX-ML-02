@@ -1,0 +1,17 @@
+ML Training Data Summary
+==================================================
+
+Total Records: 158,579
+Total Features: 85
+Date Range: 2024-09-01 07:00:00 to 2025-09-01 06:00:00
+Symbols: ADA, ATOM, AVAX, BCH, BNB, BTC, DOT, ETH, FIL, LINK, LTC, MATIC, SOL, TRX, XRP
+Timeframes: 1d, 1h, 4h
+
+Signal Distribution:
+Signal Success Rate: 24.21%
+Strong Signal Rate: 12.19%
+
+Market Regime Distribution:
+sideways: 58,232 (36.7%)
+uptrend: 54,189 (34.2%)
+downtrend: 46,158 (29.1%)
