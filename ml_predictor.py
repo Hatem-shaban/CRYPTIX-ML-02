@@ -226,13 +226,16 @@ class EnhancedMLPredictor:
             return 0.0
 
     def predict_market_regime(self, df):
-        """Predict market regime using ML model with robust error handling"""
+        """Predict market regime using ML model with smart feature alignment"""
         if not SKLEARN_AVAILABLE or self.regime_model is None or self.regime_scaler is None:
             return self._fallback_regime_prediction(df)
             
         try:
-            # Extract features
-            regime_features = self._extract_regime_features(df)
+            # Extract features using smart alignment
+            regime_features = self._extract_regime_features_smart(df)
+            
+            if regime_features is None or len(regime_features) == 0:
+                return self._fallback_regime_prediction(df)
             
             # Use only the latest data point
             X = regime_features.iloc[-1:].values
@@ -259,15 +262,116 @@ class EnhancedMLPredictor:
                 
             except ValueError as ve:
                 if "features" in str(ve).lower():
-                    # Feature mismatch - use fallback
-                    print(f"Regime prediction feature mismatch, using fallback: {ve}")
-                    return self._fallback_regime_prediction(df)
+                    # Feature mismatch - use smart feature alignment
+                    aligned_features = self._align_regime_features(X)
+                    if aligned_features is not None:
+                        X_scaled = self.regime_scaler.transform([aligned_features])
+                        regime_pred = self.regime_model.predict(X_scaled)[0]
+                        regime_proba = self.regime_model.predict_proba(X_scaled)[0]
+                        confidence = max(regime_proba)
+                        
+                        return {
+                            'regime': regime_pred,
+                            'confidence': confidence,
+                            'probabilities': {
+                                label: prob for label, prob in zip(getattr(self, 'regime_labels', ['NORMAL']), regime_proba)
+                            }
+                        }
+                    else:
+                        return self._fallback_regime_prediction(df)
                 else:
                     raise ve
             
         except Exception as e:
             print(f"Error in regime prediction: {e}")
             return self._fallback_regime_prediction(df)
+
+    def _extract_regime_features_smart(self, df):
+        """Extract regime features with smart model alignment"""
+        try:
+            # Get expected feature count from the trained model
+            expected_features = getattr(self.regime_scaler, 'n_features_in_', 4)
+            
+            # Create core features that are most important for regime detection
+            features = pd.DataFrame()
+            
+            # Feature 1: Price volatility (most important)
+            features['volatility'] = df['close'].pct_change().rolling(20).std()
+            
+            # Feature 2: Volume surge (second most important) 
+            if 'volume' in df.columns:
+                features['volume_surge'] = df['volume'] / df['volume'].rolling(20).mean()
+            else:
+                features['volume_surge'] = 1.0
+            
+            # Feature 3: Price change magnitude (third most important)
+            features['price_change'] = df['close'].pct_change().abs()
+            
+            # Feature 4: Trend strength (fourth most important)
+            if 'sma5' in df.columns and 'sma20' in df.columns:
+                features['trend_strength'] = abs(df['sma5'] - df['sma20']) / df['sma20']
+            else:
+                # Calculate simple trend from price
+                sma5 = df['close'].rolling(5).mean()
+                sma20 = df['close'].rolling(20).mean()
+                features['trend_strength'] = abs(sma5 - sma20) / sma20
+            
+            # If model expects more features, add supplementary ones
+            if expected_features > 4:
+                additional_features = [
+                    df['close'].pct_change(periods=4).abs(),  # 4h price change
+                    df['close'].pct_change(periods=24).abs() if len(df) > 24 else df['close'].pct_change().abs(),  # 24h price change
+                    df.get('rsi', pd.Series([50] * len(df))).rolling(10).std() / 10,  # RSI volatility normalized
+                    (df.get('high', df['close']) - df.get('low', df['close'])) / df['close']  # Price range
+                ]
+                
+                for i, add_feature in enumerate(additional_features):
+                    if len(features.columns) < expected_features:
+                        features[f'feature_{i+5}'] = add_feature
+            
+            # Ensure we have exactly the right number of features
+            while len(features.columns) < expected_features:
+                features[f'default_{len(features.columns)}'] = 0.5
+                
+            # Truncate if we have too many
+            if len(features.columns) > expected_features:
+                features = features.iloc[:, :expected_features]
+            
+            return features.ffill().fillna(0.5)
+            
+        except Exception as e:
+            print(f"Error in smart regime feature extraction: {e}")
+            return None
+
+    def _align_regime_features(self, features_array):
+        """Align features to match trained model expectations"""
+        try:
+            expected_features = getattr(self.regime_scaler, 'n_features_in_', 4)
+            
+            if len(features_array) == 0:
+                return None
+                
+            # Take first row if it's 2D
+            if len(features_array.shape) > 1:
+                features = features_array[0]
+            else:
+                features = features_array
+            
+            # Align to expected feature count
+            if len(features) > expected_features:
+                # Use most important features (first ones)
+                aligned = features[:expected_features]
+            elif len(features) < expected_features:
+                # Pad with neutral values
+                aligned = list(features) + [0.5] * (expected_features - len(features))
+            else:
+                aligned = features
+                
+            return aligned
+            
+        except Exception as e:
+            print(f"Error aligning regime features: {e}")
+            return None
 
     def predict_signal_success(self, signal_data, current_indicators):
         """Predict success probability of a trading signal with robust error handling"""

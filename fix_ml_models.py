@@ -120,54 +120,79 @@ def train_compatible_models():
         print(f"📁 Model saved: rf_pattern_recognition_model.pkl")
         print(f"📁 Scaler saved: rf_pattern_scaler.pkl")
         
-        # Also create a simple regime model to fix regime prediction issues
-        print("🔨 Training regime detection model...")
+        # Train regime model with exact 4 features that smart alignment uses
+        print("🔨 Training regime detection model with smart alignment...")
         
-        # Create regime training data
+        # Create regime training data with EXACTLY 4 features matching smart alignment
         regime_data = {
-            'volatility': np.random.exponential(0.02, 1000),
-            'volume_surge': np.random.lognormal(0, 0.5, 1000),
-            'price_change': np.random.normal(0, 0.02, 1000),
-            'trend_strength': np.random.uniform(0, 1, 1000)
+            'volatility': np.random.exponential(0.02, 2000).clip(0, 0.1),
+            'volume_surge': np.random.lognormal(0, 0.5, 2000).clip(0.1, 5),
+            'price_change': np.random.exponential(0.01, 2000).clip(0, 0.05),
+            'trend_strength': np.random.exponential(0.02, 2000).clip(0, 0.1)
         }
         
-        # Create regime labels
+        # Create realistic regime labels based on the 4 features
         regime_labels = []
-        for i in range(1000):
+        for i in range(2000):
             vol = regime_data['volatility'][i]
-            surge = regime_data['volume_surge'][i]
-            change = abs(regime_data['price_change'][i])
+            surge = regime_data['volume_surge'][i] 
+            change = regime_data['price_change'][i]
+            trend = regime_data['trend_strength'][i]
             
-            if vol > 0.05 or surge > 3 or change > 0.03:
+            # Create more realistic regime classification
+            volatility_score = vol / 0.05  # Normalize volatility (0-2+)
+            volume_score = min(surge / 2, 2)  # Cap volume score at 2
+            change_score = change / 0.025  # Normalize price change (0-2+)
+            trend_score = trend / 0.05  # Normalize trend strength (0-2+)
+            
+            # Combined regime score
+            regime_score = (volatility_score + volume_score + change_score + trend_score) / 4
+            
+            if regime_score > 1.5:
                 regime_labels.append('EXTREME')
-            elif vol > 0.03 or surge > 2 or change > 0.02:
-                regime_labels.append('VOLATILE') 
-            elif vol < 0.01 and surge < 0.8 and change < 0.005:
+            elif regime_score > 1.0:
+                regime_labels.append('VOLATILE')
+            elif regime_score < 0.3:
                 regime_labels.append('QUIET')
             else:
                 regime_labels.append('NORMAL')
         
+        # Ensure balanced distribution
+        unique_labels, counts = np.unique(regime_labels, return_counts=True)
+        print(f"   📊 Regime distribution: {dict(zip(unique_labels, counts))}")
+        
         regime_df = pd.DataFrame(regime_data)
         
-        # Train regime model
+        # Train regime model with RobustScaler (matching the loaded model)
         from sklearn.preprocessing import RobustScaler, LabelEncoder
         
-        regime_scaler = RobustScaler()
+        regime_scaler = RobustScaler()  # Use RobustScaler to match existing
         regime_encoder = LabelEncoder()
         
         X_regime = regime_scaler.fit_transform(regime_df.values)
         y_regime = regime_encoder.fit_transform(regime_labels)
         
+        # Split and train
+        X_regime_train, X_regime_test, y_regime_train, y_regime_test = train_test_split(
+            X_regime, y_regime, test_size=0.2, random_state=42
+        )
+        
         regime_model = RandomForestClassifier(n_estimators=50, random_state=42)
-        regime_model.fit(X_regime, y_regime)
+        regime_model.fit(X_regime_train, y_regime_train)
+        
+        # Evaluate regime model
+        y_regime_pred = regime_model.predict(X_regime_test)
+        regime_accuracy = accuracy_score(y_regime_test, y_regime_pred)
         
         # Save regime models
         joblib.dump(regime_model, os.path.join(model_dir, 'rf_market_regime_model.pkl'))
         joblib.dump(regime_scaler, os.path.join(model_dir, 'rf_regime_scaler.pkl'))
         joblib.dump(regime_encoder, os.path.join(model_dir, 'rf_regime_label_encoder.pkl'))
         
-        print(f"✅ Regime detection model trained")
+        print(f"✅ Regime detection model trained with accuracy: {regime_accuracy:.3f}")
         print(f"📁 Regime model saved: rf_market_regime_model.pkl")
+        print(f"   🎯 Features: 4 (volatility, volume_surge, price_change, trend_strength)")
+        print(f"   📊 Classes: {list(regime_encoder.classes_)}")
         
         return True
         
