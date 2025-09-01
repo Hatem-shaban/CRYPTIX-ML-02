@@ -5483,9 +5483,15 @@ def liquidate_dust_position(dust_position):
         if quantity < min_qty:
             return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
         
-        # Check minimum notional value
+        # Check minimum notional value with fresh price
         if min_notional_filter:
-            current_price = dust_position['price']
+            # Get fresh price to ensure accurate notional calculation
+            try:
+                ticker = client.get_ticker(symbol=symbol)
+                current_price = float(ticker['lastPrice'])
+            except:
+                current_price = dust_position['price']  # Fallback to stored price
+                
             notional_value = quantity * current_price
             min_notional = float(min_notional_filter['minNotional'])
             if notional_value < min_notional:
@@ -5516,18 +5522,19 @@ def liquidate_dust_position(dust_position):
         print(f"   Fee: ${total_fee:.4f}")
         
         # Log the trade
-        log_trade_to_csv(
-            action="LIQUIDATE_DUST",
-            symbol=symbol,
-            quantity=quantity,
-            price=avg_price,
-            value=total_value,
-            fee=total_fee,
-            additional_data={
-                'dust_value': dust_position['usdt_value'],
-                'order_type': 'dust_liquidation'
-            }
-        )
+        log_trade_to_csv({
+            'signal': 'LIQUIDATE_DUST',
+            'symbol': symbol,
+            'quantity': quantity,
+            'price': avg_price,
+            'value': total_value,
+            'fee': total_fee,
+            'status': 'SUCCESS',
+            'timestamp': format_cairo_time()
+        }, {
+            'dust_value': dust_position['usdt_value'],
+            'order_type': 'dust_liquidation'
+        })
         
         return result
         
@@ -5599,18 +5606,19 @@ def convert_dust_to_bnb():
                 print(f"   Total BNB received: {total_bnb_received:.8f}")
                 
                 # Log the conversion
-                log_trade_to_csv(
-                    action="DUST_CONVERSION",
-                    symbol="DUST_TO_BNB",
-                    quantity=len(converted_assets),
-                    price=0,
-                    value=total_bnb_received,
-                    fee=0,
-                    additional_data={
-                        'converted_assets': converted_assets,
-                        'total_bnb_received': total_bnb_received
-                    }
-                )
+                log_trade_to_csv({
+                    'signal': 'DUST_CONVERSION',
+                    'symbol': 'DUST_TO_BNB',
+                    'quantity': len(converted_assets),
+                    'price': 0,
+                    'value': total_bnb_received,
+                    'fee': 0,
+                    'status': 'SUCCESS',
+                    'timestamp': format_cairo_time()
+                }, {
+                    'converted_assets': converted_assets,
+                    'total_bnb_received': total_bnb_received
+                })
                 
                 return {
                     "success": True,
