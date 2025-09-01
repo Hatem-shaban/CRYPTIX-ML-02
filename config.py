@@ -287,3 +287,27 @@ MARKET_INTELLIGENCE = {
 print(f"ML Features: Enabled={ML_ENABLED}, Pattern Recognition={PATTERN_RECOGNITION_ENABLED}")
 print(f"Regime Detection: {REGIME_DETECTION_ENABLED}, Adaptive Thresholds: {ADAPTIVE_THRESHOLDS_ENABLED}")
 print(f"Market Intelligence: {MARKET_INTELLIGENCE['enabled']}")
+
+# ML Pure Trading Strategy Configuration
+ML_STRATEGY = {
+    'enabled': ML_ENABLED,
+    'target_daily_return': 10.0,  # Target 10%+ daily returns
+    'min_confidence_threshold': 0.65,
+    'high_confidence_threshold': 0.8,
+    'max_position_multiplier': 2.0,
+    'buy_low_threshold': 0.3,  # Buy when price in bottom 30% of range
+    'sell_high_threshold': 0.7,  # Sell when price in top 30% of range
+    'regime_adjustments': {
+        'BULLISH_EXTREME': {'position_multiplier': 1.5, 'confidence_threshold': 0.7},
+        'BULLISH': {'position_multiplier': 1.2, 'confidence_threshold': 0.65},
+        'NEUTRAL': {'position_multiplier': 1.0, 'confidence_threshold': 0.65},
+        'BEARISH': {'position_multiplier': 0.8, 'confidence_threshold': 0.7},
+        'BEARISH_EXTREME': {'position_multiplier': 0.5, 'confidence_threshold': 0.8}
+    },
+    'profitability_validation': True,
+    'smart_timing': True,
+    'adaptive_position_sizing': True
+}
+
+# Trading Strategy Selection
+DEFAULT_STRATEGY = os.getenv('DEFAULT_STRATEGY', 'ADAPTIVE')  # Can be ADAPTIVE or ML_PURE

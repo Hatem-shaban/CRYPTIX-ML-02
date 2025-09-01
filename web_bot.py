@@ -48,6 +48,17 @@ except ImportError as e:
     market_intelligence = None
     ml_predictor = None
 
+# Import ML Trading Strategy
+try:
+    from ml_trading_strategy import ml_pure_strategy, get_ml_trading_strategy
+    ML_STRATEGY_AVAILABLE = True
+    print("🧠 ML Pure Trading Strategy loaded successfully")
+    print("🎯 Target: Smart, Profitable, Non-Conservative ML Trading")
+except ImportError as e:
+    print(f"⚠️ ML Trading Strategy not available: {e}")
+    ML_STRATEGY_AVAILABLE = False
+    def ml_pure_strategy(*args, **kwargs): return "HOLD", "ML Strategy not available"
+
 # Import smart signal optimizer
 try:
     from smart_signal_optimizer import get_signal_optimizer
@@ -591,7 +602,7 @@ bot_status = {
     'macd': {'macd': 0, 'signal': 0, 'trend': 'NEUTRAL'},
     'sentiment': 'neutral',
     'monitored_pairs': {},  # Track all monitored pairs' status
-    'trading_strategy': 'ADAPTIVE',  # Current trading strategy (ADAPTIVE only)
+    'trading_strategy': config.DEFAULT_STRATEGY,  # Current trading strategy
     'next_signal_time': None,  # Track when next signal will be generated
     'signal_interval': 300,  # Base signal generation interval in seconds (5 minutes - adaptive)
     'market_regime': 'NORMAL',  # Current market regime (QUIET, NORMAL, VOLATILE, EXTREME)
@@ -2136,10 +2147,17 @@ def signal_generator(df, symbol="BTCUSDT"):
     
     # Use selected strategy with enhanced error handling
     try:
-        strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
+        strategy = bot_status.get('trading_strategy', config.DEFAULT_STRATEGY)
         print(f"Using strategy: {strategy}")  # Debug log
         
-        if strategy == 'ADAPTIVE':
+        if strategy == 'ML_PURE':
+            if ML_STRATEGY_AVAILABLE:
+                print("🧠 Using ML Pure Strategy - AI-Driven Trading")
+                signal, reason = ml_pure_strategy(df, symbol, indicators)
+            else:
+                print("⚠️ ML Pure Strategy not available, falling back to ADAPTIVE")
+                signal, reason = adaptive_strategy(df, symbol, indicators)
+        elif strategy == 'ADAPTIVE':
             signal, reason = adaptive_strategy(df, symbol, indicators)
         else:
             print(f"Unknown strategy {strategy}, defaulting to ADAPTIVE")  # Debug log
@@ -3768,9 +3786,10 @@ def download_logs():
 @app.route('/')
 def home():
     # Get current strategy for display
-    current_strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
+    current_strategy = bot_status.get('trading_strategy', config.DEFAULT_STRATEGY)
     strategy_descriptions = {
-        'ADAPTIVE': '🧠 Smart strategy that adapts to market conditions'
+        'ADAPTIVE': '🧠 Smart strategy that adapts to market conditions',
+        'ML_PURE': '🤖 Pure ML Strategy - AI-driven trading for maximum profitability (Target: 10%+ daily)'
     }
     strategy_desc = strategy_descriptions.get(current_strategy, '')
     
@@ -4033,6 +4052,12 @@ def home():
             display: block;
         }
         
+        .strategy-selection {
+            display: grid;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
         .strategy-btn {
             padding: 14px;
             border-radius: 14px;
@@ -4242,8 +4267,29 @@ def home():
                 <div class="section-title">🎯 Trading Strategy</div>
                 <div class="strategy-desc">{{ strategy_desc }}</div>
                 <div class="strategy-info">
-                    <div class="strategy-btn active">
-                        🧠 <span>Adaptive - Smart & Dynamic</span>
+                    <div class="strategy-selection">
+                        {% if status.trading_strategy == 'ADAPTIVE' %}
+                        <div class="strategy-btn active">
+                            🧠 <span>Adaptive - Smart & Dynamic</span>
+                        </div>
+                        <a href="/set_strategy/ML_PURE" class="strategy-btn">
+                            🤖 <span>ML Pure - AI Driven (Target 10%+)</span>
+                        </a>
+                        {% elif status.trading_strategy == 'ML_PURE' %}
+                        <a href="/set_strategy/ADAPTIVE" class="strategy-btn">
+                            🧠 <span>Adaptive - Smart & Dynamic</span>
+                        </a>
+                        <div class="strategy-btn active">
+                            🤖 <span>ML Pure - AI Driven (Target 10%+)</span>
+                        </div>
+                        {% else %}
+                        <div class="strategy-btn active">
+                            🧠 <span>Adaptive - Smart & Dynamic</span>
+                        </div>
+                        <a href="/set_strategy/ML_PURE" class="strategy-btn">
+                            🤖 <span>ML Pure - AI Driven (Target 10%+)</span>
+                        </a>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -4342,9 +4388,19 @@ def force_scan():
 def set_strategy(name):
     """Switch trading strategy"""
     try:
-        if name.upper() in ['ADAPTIVE']:
-            previous_strategy = bot_status.get('trading_strategy', 'ADAPTIVE')
+        if name.upper() in ['ADAPTIVE', 'ML_PURE']:
+            previous_strategy = bot_status.get('trading_strategy', config.DEFAULT_STRATEGY)
             new_strategy = name.upper()
+            
+            # Validate ML strategy availability
+            if new_strategy == 'ML_PURE' and not ML_STRATEGY_AVAILABLE:
+                log_error_to_csv(
+                    f"ML_PURE strategy not available - ML modules missing",
+                    "STRATEGY_ERROR",
+                    "set_strategy",
+                    "ERROR"
+                )
+                return "ML Strategy not available - missing ML modules", 400
             
             # Update bot status
             bot_status['trading_strategy'] = new_strategy
@@ -4364,7 +4420,7 @@ def set_strategy(name):
             return redirect('/')
         else:
             log_error_to_csv(
-                f"Invalid strategy name: {name}. Only ADAPTIVE is supported.",
+                f"Invalid strategy name: {name}. Supported strategies: ADAPTIVE, ML_PURE",
                 "STRATEGY_ERROR",
                 "set_strategy",
                 "ERROR"
