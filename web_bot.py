@@ -4272,11 +4272,11 @@ def home():
                         <div class="strategy-btn active">
                             🧠 <span>Adaptive - Smart & Dynamic</span>
                         </div>
-                        <a href="/set_strategy/ML_PURE" class="strategy-btn">
+                        <a href="/strategy/ML_PURE" class="strategy-btn">
                             🤖 <span>ML Pure - AI Driven (Target 10%+)</span>
                         </a>
                         {% elif status.trading_strategy == 'ML_PURE' %}
-                        <a href="/set_strategy/ADAPTIVE" class="strategy-btn">
+                        <a href="/strategy/ADAPTIVE" class="strategy-btn">
                             🧠 <span>Adaptive - Smart & Dynamic</span>
                         </a>
                         <div class="strategy-btn active">
@@ -4286,7 +4286,7 @@ def home():
                         <div class="strategy-btn active">
                             🧠 <span>Adaptive - Smart & Dynamic</span>
                         </div>
-                        <a href="/set_strategy/ML_PURE" class="strategy-btn">
+                        <a href="/strategy/ML_PURE" class="strategy-btn">
                             🤖 <span>ML Pure - AI Driven (Target 10%+)</span>
                         </a>
                         {% endif %}
