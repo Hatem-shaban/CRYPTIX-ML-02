@@ -5567,10 +5567,12 @@ def convert_dust_to_bnb():
         
         # Execute dust conversion
         try:
-            result = client.dust_transfer(asset=convertible_assets)
+            # Note: Binance dust conversion has specific requirements and limitations
+            print(f"   Attempting to convert: {', '.join(convertible_assets)}")
+            result = client.transfer_dust(asset=convertible_assets)
             
-            if result.get('success'):
-                total_bnb = float(result.get('transferResult', {}).get('totalTransferBnb', 0))
+            if result and result.get('transferResult'):
+                total_bnb = float(result.get('totalTransfered', 0))
                 
                 print(f"✅ Dust conversion successful!")
                 print(f"   Converted assets: {', '.join(convertible_assets)}")
@@ -5597,7 +5599,7 @@ def convert_dust_to_bnb():
                     "details": result
                 }
             else:
-                return {"success": False, "error": "Dust conversion failed", "details": result}
+                return {"success": False, "error": "Dust conversion failed - no transfer result", "details": result}
                 
         except Exception as e:
             if "Insufficient balance" in str(e) or "does not meet the minimum threshold" in str(e):
