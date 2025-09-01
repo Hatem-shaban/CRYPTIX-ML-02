@@ -173,19 +173,52 @@ class MLTradingStrategy:
             }
     
     def _get_ml_predictions(self, df: pd.DataFrame, symbol: str, indicators: Dict, market_analysis: Dict) -> Dict:
-        """Get ML predictions for price direction and signal success"""
+        """Get ML predictions for price direction and signal success with robust error handling"""
         try:
-            # Predict signal success probability
-            signal_success_prob_buy = self.ml_predictor.predict_signal_success(
-                {'action': 'BUY', 'symbol': symbol, **indicators}, indicators
-            )
+            # Initialize default values
+            signal_success_prob_buy = 0.5
+            signal_success_prob_sell = 0.5
+            regime_prediction = {'regime': 'NORMAL', 'confidence': 0.5}
+            ml_confidence = 0.5
             
-            signal_success_prob_sell = self.ml_predictor.predict_signal_success(
-                {'action': 'SELL', 'symbol': symbol, **indicators}, indicators
-            )
-            
-            # Get market regime prediction
-            regime_prediction = self.ml_predictor.predict_market_regime(df)
+            # Try to get ML predictions with graceful error handling
+            if self.ml_predictor:
+                try:
+                    # Create standardized feature vector for signal success prediction
+                    # Use only the core features that match the trained model
+                    standardized_indicators = {
+                        'rsi': indicators.get('rsi', 50),
+                        'macd': indicators.get('macd', {}).get('macd', 0) if isinstance(indicators.get('macd'), dict) else indicators.get('macd', 0),
+                        'volatility': indicators.get('volatility', 0.02),
+                        'volume_ratio': getattr(df, 'volume', pd.Series([1.0])).iloc[-1] / getattr(df, 'volume', pd.Series([1.0])).rolling(20).mean().iloc[-1] if len(df) > 20 else 1.0
+                    }
+                    
+                    # Predict signal success probability with error handling
+                    try:
+                        signal_success_prob_buy = self.ml_predictor.predict_signal_success(
+                            {'action': 'BUY', 'symbol': symbol}, standardized_indicators
+                        )
+                    except Exception as e:
+                        logging.warning(f"Buy signal prediction failed: {e}")
+                        signal_success_prob_buy = 0.5
+                    
+                    try:
+                        signal_success_prob_sell = self.ml_predictor.predict_signal_success(
+                            {'action': 'SELL', 'symbol': symbol}, standardized_indicators
+                        )
+                    except Exception as e:
+                        logging.warning(f"Sell signal prediction failed: {e}")
+                        signal_success_prob_sell = 0.5
+                    
+                    # Get market regime prediction with error handling
+                    try:
+                        regime_prediction = self.ml_predictor.predict_market_regime(df)
+                    except Exception as e:
+                        logging.warning(f"Regime prediction failed: {e}")
+                        regime_prediction = {'regime': 'NORMAL', 'confidence': 0.5}
+                    
+                except Exception as e:
+                    logging.warning(f"ML predictor error: {e}")
             
             # Calculate ML confidence score
             ml_confidence = self._calculate_ml_confidence_score(
@@ -203,6 +236,15 @@ class MLTradingStrategy:
             
         except Exception as e:
             logging.error(f"Error in ML predictions: {e}")
+            # Return default safe values
+            return {
+                'buy_success_probability': 0.5,
+                'sell_success_probability': 0.5,
+                'regime_prediction': {'regime': 'NORMAL', 'confidence': 0.5},
+                'ml_confidence': 0.5,
+                'trend_prediction': {'direction': 'NEUTRAL', 'strength': 0.5},
+                'volatility_forecast': 0.02
+            }
             return {
                 'buy_success_probability': 0.5,
                 'sell_success_probability': 0.5,

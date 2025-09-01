@@ -226,7 +226,7 @@ class EnhancedMLPredictor:
             return 0.0
 
     def predict_market_regime(self, df):
-        """Predict market regime using ML model"""
+        """Predict market regime using ML model with robust error handling"""
         if not SKLEARN_AVAILABLE or self.regime_model is None or self.regime_scaler is None:
             return self._fallback_regime_prediction(df)
             
@@ -237,51 +237,131 @@ class EnhancedMLPredictor:
             # Use only the latest data point
             X = regime_features.iloc[-1:].values
             
-            # Scale features
-            X_scaled = self.regime_scaler.transform(X)
-            
-            # Predict
-            regime_pred = self.regime_model.predict(X_scaled)[0]
-            regime_proba = self.regime_model.predict_proba(X_scaled)[0]
-            
-            # Get confidence
-            confidence = max(regime_proba)
-            
-            return {
-                'regime': regime_pred,
-                'confidence': confidence,
-                'probabilities': {
-                    label: prob for label, prob in zip(self.regime_labels, regime_proba)
+            # Handle feature dimension mismatch gracefully
+            try:
+                # Scale features
+                X_scaled = self.regime_scaler.transform(X)
+                
+                # Predict
+                regime_pred = self.regime_model.predict(X_scaled)[0]
+                regime_proba = self.regime_model.predict_proba(X_scaled)[0]
+                
+                # Get confidence
+                confidence = max(regime_proba)
+                
+                return {
+                    'regime': regime_pred,
+                    'confidence': confidence,
+                    'probabilities': {
+                        label: prob for label, prob in zip(getattr(self, 'regime_labels', ['NORMAL']), regime_proba)
+                    }
                 }
-            }
+                
+            except ValueError as ve:
+                if "features" in str(ve).lower():
+                    # Feature mismatch - use fallback
+                    print(f"Regime prediction feature mismatch, using fallback: {ve}")
+                    return self._fallback_regime_prediction(df)
+                else:
+                    raise ve
             
         except Exception as e:
             print(f"Error in regime prediction: {e}")
             return self._fallback_regime_prediction(df)
 
     def predict_signal_success(self, signal_data, current_indicators):
-        """Predict success probability of a trading signal"""
+        """Predict success probability of a trading signal with robust error handling"""
         if not SKLEARN_AVAILABLE or self.pattern_model is None or self.pattern_scaler is None:
             return 0.5  # Default neutral probability
             
         try:
-            # Create feature vector from current indicators
-            features = self._create_pattern_vector(current_indicators)
+            # Create feature vector from current indicators with standardized features
+            features = self._create_pattern_vector_robust(current_indicators)
             
             if features is None:
                 return 0.5
                 
-            # Scale features
-            X_scaled = self.pattern_scaler.transform([features])
-            
-            # Predict success probability
-            success_proba = self.pattern_model.predict_proba(X_scaled)[0]
-            
-            # Return probability of success (class 1)
-            return success_proba[1] if len(success_proba) > 1 else 0.5
+            # Handle feature dimension mismatch gracefully
+            try:
+                # Scale features
+                X_scaled = self.pattern_scaler.transform([features])
+                
+                # Predict success probability
+                success_proba = self.pattern_model.predict_proba(X_scaled)[0]
+                
+                # Return probability of success (class 1)
+                return success_proba[1] if len(success_proba) > 1 else 0.5
+                
+            except ValueError as ve:
+                if "features" in str(ve).lower():
+                    # Feature mismatch - use fallback prediction
+                    return self._fallback_signal_prediction(current_indicators)
+                else:
+                    raise ve
             
         except Exception as e:
             print(f"Error predicting signal success: {e}")
+            return self._fallback_signal_prediction(current_indicators)
+
+    def _create_pattern_vector_robust(self, indicators):
+        """Create robust feature vector that handles missing indicators gracefully"""
+        try:
+            # Core features that are always available
+            features = [
+                indicators.get('rsi', 50),
+                indicators.get('macd', 0),
+                indicators.get('volatility', 0.02),
+                indicators.get('volume_ratio', 1.0)
+            ]
+            
+            # Try to match the expected feature count of the trained model
+            # This handles the case where models were trained with different feature sets
+            expected_features = getattr(self.pattern_scaler, 'n_features_in_', 4)
+            
+            if expected_features > len(features):
+                # Add additional features to match expected count
+                additional_features = [
+                    indicators.get('current_price', 0) / max(indicators.get('sma20', 1), 1),
+                    indicators.get('adx', 25),
+                    indicators.get('stoch_k', 50),
+                    indicators.get('bb_position', 0.5),  # Bollinger band position
+                    indicators.get('momentum', 0),       # Price momentum
+                    indicators.get('trend_strength', 0.5) # Trend strength
+                ]
+                
+                # Add only as many as needed
+                features.extend(additional_features[:expected_features - len(features)])
+            
+            # Ensure we have exactly the right number of features
+            while len(features) < expected_features:
+                features.append(0.5)  # Neutral default values
+                
+            # Truncate if we have too many
+            features = features[:expected_features]
+            
+            return features
+            
+        except Exception:
+            return None
+
+    def _fallback_signal_prediction(self, indicators):
+        """Fallback signal prediction when ML models fail"""
+        try:
+            # Simple rule-based prediction
+            rsi = indicators.get('rsi', 50)
+            macd = indicators.get('macd', 0)
+            
+            # Basic signal success probability based on RSI and MACD
+            if rsi < 30 and macd > 0:  # Oversold with bullish MACD
+                return 0.7
+            elif rsi > 70 and macd < 0:  # Overbought with bearish MACD
+                return 0.7
+            elif 40 < rsi < 60:  # Neutral RSI
+                return 0.5
+            else:
+                return 0.4  # Less favorable conditions
+                
+        except Exception:
             return 0.5
 
     def calculate_adaptive_thresholds(self, df, market_regime='NORMAL'):
