@@ -598,8 +598,8 @@ bot_status = {
     'hunting_mode': False,  # Aggressive opportunity hunting mode
     'last_volatility_check': None,  # Track when we last checked volatility
     'adaptive_intervals': {
-        'QUIET': 600,       # 60 minutes during quiet markets (increased from 30min)
-        'NORMAL': 600,      # 30 minutes during normal markets (increased from 5min)
+        'QUIET': 300,       # 60 minutes during quiet markets (increased from 30min)
+        'NORMAL': 300,      # 30 minutes during normal markets (increased from 5min)
         'VOLATILE': 900,     # 15 minutes during volatile markets (increased from 3min)
         'EXTREME': 600,      # 10 minutes during extreme volatility (increased from 1min)
         'HUNTING': 300       # 5 minutes when hunting opportunities (increased from 30s)
@@ -5305,13 +5305,17 @@ def detect_dust_positions(min_usdt_value=5.0):
             if asset == 'USDT' or total_balance <= 0:
                 continue
                 
+            # Only check free balance for liquidation (can't sell locked funds)
+            if free_balance <= 0:
+                continue
+                
             # Try to get USDT value
             usdt_value = 0
             try:
                 if asset in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOT']:
                     ticker = client.get_ticker(symbol=f"{asset}USDT")
                     price = float(ticker['lastPrice'])
-                    usdt_value = total_balance * price
+                    usdt_value = free_balance * price
                     
                     if 0 < usdt_value < min_usdt_value:
                         dust_positions.append({
@@ -5322,7 +5326,7 @@ def detect_dust_positions(min_usdt_value=5.0):
                             'usdt_value': usdt_value,
                             'price': price
                         })
-                        print(f"   💨 {asset}: {total_balance:.8f} (~${usdt_value:.2f})")
+                        print(f"   💨 {asset}: {free_balance:.8f} (~${usdt_value:.2f})")
             except Exception as e:
                 print(f"   ⚠️ Could not check {asset}: {e}")
                 continue
@@ -5456,6 +5460,27 @@ def liquidate_dust_position(dust_position):
         print(f"   Quantity: {quantity:.8f} {asset}")
         print(f"   Est. Value: ${dust_position['usdt_value']:.2f}")
         
+        # Use existing LOT_SIZE validation logic from sell_partial_position
+        symbol_info = client.get_symbol_info(symbol)
+        if not symbol_info:
+            return {"success": False, "error": f"Could not get symbol info for {symbol}"}
+            
+        # Find lot size filter and apply validation (reusing existing logic)
+        lot_size_filter = None
+        for f in symbol_info['filters']:
+            if f['filterType'] == 'LOT_SIZE':
+                lot_size_filter = f
+                break
+                
+        if lot_size_filter:
+            step_size = float(lot_size_filter['stepSize'])
+            quantity = round(quantity / step_size) * step_size
+            
+        # Check minimum quantity (reusing existing logic)
+        min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
+        if quantity < min_qty:
+            return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
+        
         # Execute market sell
         order = client.order_market_sell(symbol=symbol, quantity=quantity)
         
@@ -5500,6 +5525,91 @@ def liquidate_dust_position(dust_position):
         error_msg = f"Error liquidating dust {dust_position['asset']}: {e}"
         print(f"❌ {error_msg}")
         log_error_to_csv(error_msg, "DUST_LIQUIDATION_ERROR", "liquidate_dust_position", "ERROR")
+        return {"success": False, "error": str(e)}
+
+def convert_dust_to_bnb():
+    """Convert small balances to BNB using Binance's dust conversion feature"""
+    try:
+        if not client:
+            return {"success": False, "error": "Client not initialized"}
+        
+        print("\n🔄 Converting dust balances to BNB...")
+        
+        # Get dust balances that can be converted
+        account_info = client.get_account()
+        convertible_assets = []
+        
+        for balance in account_info['balances']:
+            asset = balance['asset']
+            free_balance = float(balance['free'])
+            
+            # Skip BNB, USDT and zero balances
+            if asset in ['BNB', 'USDT'] or free_balance <= 0:
+                continue
+                
+            # Check if asset has very small balance (likely dust)
+            if asset in ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOT'] and free_balance > 0:
+                try:
+                    ticker = client.get_ticker(symbol=f"{asset}USDT")
+                    price = float(ticker['lastPrice'])
+                    usdt_value = free_balance * price
+                    
+                    # If value is very small (under $1), consider for dust conversion
+                    if 0 < usdt_value < 1.0:
+                        convertible_assets.append(asset)
+                        print(f"   💨 {asset}: {free_balance:.8f} (~${usdt_value:.4f})")
+                except:
+                    continue
+        
+        if not convertible_assets:
+            print("ℹ️ No dust balances found for conversion")
+            return {"success": True, "converted_assets": [], "message": "No dust to convert"}
+        
+        # Execute dust conversion
+        try:
+            result = client.dust_transfer(asset=convertible_assets)
+            
+            if result.get('success'):
+                total_bnb = float(result.get('transferResult', {}).get('totalTransferBnb', 0))
+                
+                print(f"✅ Dust conversion successful!")
+                print(f"   Converted assets: {', '.join(convertible_assets)}")
+                print(f"   Total BNB received: {total_bnb:.8f}")
+                
+                # Log the conversion
+                log_trade_to_csv(
+                    action="DUST_CONVERSION",
+                    symbol="DUST_TO_BNB",
+                    quantity=len(convertible_assets),
+                    price=0,
+                    value=total_bnb,
+                    fee=0,
+                    additional_data={
+                        'converted_assets': convertible_assets,
+                        'total_bnb_received': total_bnb
+                    }
+                )
+                
+                return {
+                    "success": True,
+                    "converted_assets": convertible_assets,
+                    "total_bnb_received": total_bnb,
+                    "details": result
+                }
+            else:
+                return {"success": False, "error": "Dust conversion failed", "details": result}
+                
+        except Exception as e:
+            if "Insufficient balance" in str(e) or "does not meet the minimum threshold" in str(e):
+                print(f"ℹ️ Dust conversion not available: {e}")
+                return {"success": False, "error": f"Dust too small for conversion: {e}"}
+            else:
+                raise e
+                
+    except Exception as e:
+        error_msg = f"Error converting dust to BNB: {e}"
+        print(f"❌ {error_msg}")
+        log_error_to_csv(error_msg, "DUST_CONVERSION_ERROR", "convert_dust_to_bnb", "ERROR")
         return {"success": False, "error": str(e)}
 
 def execute_position_rebalancing():
@@ -5640,29 +5750,47 @@ def execute_position_rebalancing():
                     print(f"✅ Liquidated {dust_pos['asset']}: ${result['value']:.2f}")
                 else:
                     rebalancing_results["errors"].append(f"Failed to liquidate {dust_pos['asset']}: {result['error']}")
+            
+            # Try dust conversion for any remaining small balances
+            print(f"\n🔄 Attempting dust conversion for remaining small balances...")
+            dust_conversion_result = convert_dust_to_bnb()
+            
+            if dust_conversion_result["success"] and dust_conversion_result.get("converted_assets"):
+                rebalancing_results["dust_conversions"] = dust_conversion_result["converted_assets"]
+                print(f"✅ Converted {len(dust_conversion_result['converted_assets'])} assets to BNB")
+            
         else:
             print("ℹ️ No dust positions found")
+        
+        # Initialize dust_conversions if not set
+        if 'dust_conversions' not in rebalancing_results:
+            rebalancing_results['dust_conversions'] = []
             
-        # 3. Summary
+        # 4. Summary
         print("\n" + "="*60)
         print("📊 REBALANCING SUMMARY")
         print("="*60)
         print(f"Partial Sells: {len(rebalancing_results['partial_sells'])}")
         print(f"Dust Liquidations: {len(rebalancing_results['dust_liquidations'])}")
+        print(f"Dust Conversions: {len(rebalancing_results['dust_conversions'])}")
         print(f"Total USDT Freed: ${rebalancing_results['total_freed_usdt']:.2f}")
         print(f"Errors: {len(rebalancing_results['errors'])}")
         
         if rebalancing_results['errors']:
             print("\n⚠️ Errors encountered:")
             for error in rebalancing_results['errors']:
-                print(f"   - {error}")
+                print(f"❌ {error}")
+        
+        if rebalancing_results['dust_conversions']:
+            print(f"\n🔄 Dust converted to BNB: {', '.join(rebalancing_results['dust_conversions'])}")
                 
         # Send Telegram summary if available
-        if TELEGRAM_AVAILABLE and (rebalancing_results['partial_sells'] or rebalancing_results['dust_liquidations']):
+        if TELEGRAM_AVAILABLE and (rebalancing_results['partial_sells'] or rebalancing_results['dust_liquidations'] or rebalancing_results['dust_conversions']):
             summary_msg = f"🔄 Position Rebalancing Complete\n"
             summary_msg += f"💰 Total USDT Freed: ${rebalancing_results['total_freed_usdt']:.2f}\n"
             summary_msg += f"📈 Partial Sells: {len(rebalancing_results['partial_sells'])}\n"
-            summary_msg += f"💨 Dust Liquidated: {len(rebalancing_results['dust_liquidations'])}"
+            summary_msg += f"💨 Dust Liquidated: {len(rebalancing_results['dust_liquidations'])}\n"
+            summary_msg += f"🔄 Dust Converted: {len(rebalancing_results['dust_conversions'])}"
             
             notify_market_update(summary_msg)
             
