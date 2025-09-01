@@ -323,28 +323,28 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
         except Exception:
             pass
         
-        # GLOBAL rate limiting - prevent ANY signal generation too frequently
+        # OPTIMIZED rate limiting - allow more frequent signals but prevent spam
         if last_signal_time is not None:
             global_time_diff = (current_time - last_signal_time).total_seconds()
-            if global_time_diff < 45:  # Minimum 45 seconds between ANY signals globally
-                print(f"🛑 GLOBAL rate limit: Any signal suppressed (last signal {global_time_diff:.1f}s ago, need 45s gap)")
+            if global_time_diff < 20:  # Reduced from 45 to 20 seconds between ANY signals globally
+                print(f"🛑 GLOBAL rate limit: Any signal suppressed (last signal {global_time_diff:.1f}s ago, need 20s gap)")
                 return
         
-        # Enhanced duplicate prevention - prevent ANY signal for same symbol within 90 seconds
+        # Enhanced duplicate prevention - prevent ANY signal for same symbol within 60 seconds
         # This prevents rapid-fire signal generation regardless of signal type
         symbol_key = f"{symbol}"  # Just symbol, not signal type
         
         if symbol_key in last_signals:
             time_diff = (current_time - last_signals[symbol_key]).total_seconds()
-            if time_diff < 90:  # 90 seconds cooldown for ANY signal on this symbol
-                print(f"⚠️ Symbol rate limit: {signal} for {symbol} suppressed (last signal {time_diff:.1f}s ago, need 90s gap)")
+            if time_diff < 60:  # Reduced from 90 to 60 seconds cooldown for ANY signal on this symbol
+                print(f"⚠️ Symbol rate limit: {signal} for {symbol} suppressed (last signal {time_diff:.1f}s ago, need 60s gap)")
                 return
         
         # Also check for the specific signal type (additional safety)
         signal_key = f"{symbol}_{signal}"
         if signal_key in last_signals:
             time_diff = (current_time - last_signals[signal_key]).total_seconds()
-            if time_diff < 180:  # 3 minutes cooldown for same signal type
+            if time_diff < 120:  # Reduced from 180 to 120 seconds cooldown for same signal type
                 print(f"⚠️ Signal type rate limit: {signal} for {symbol} suppressed (same signal {time_diff:.1f}s ago)")
                 return
         
@@ -3128,10 +3128,10 @@ def trading_loop():
     print("📊 Market regime detection online")
     print("⚡ Breakout opportunity scanning active")
     print("📡 Signal scanning activated")
-    print("\n🛡️ === RATE LIMITING ACTIVE ===")
-    print("⏱️ Global signal cooldown: 45 seconds between ANY signals")
-    print("🔒 Symbol signal cooldown: 90 seconds per symbol")
-    print("🚫 Signal type cooldown: 180 seconds for same signal type")
+    print("\n🛡️ === OPTIMIZED RATE LIMITING ACTIVE ===")
+    print("⏱️ Global signal cooldown: 20 seconds between ANY signals")
+    print("🔒 Symbol signal cooldown: 60 seconds per symbol")
+    print("🚫 Signal type cooldown: 120 seconds for same signal type")
     print("📊 Scan cycle limit: 1 signal per scanning cycle")
     print("🕒 BTC fallback cooldown: 60 seconds")
     print("=" * 50)
