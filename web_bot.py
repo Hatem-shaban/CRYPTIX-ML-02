@@ -5465,21 +5465,31 @@ def liquidate_dust_position(dust_position):
         if not symbol_info:
             return {"success": False, "error": f"Could not get symbol info for {symbol}"}
             
-        # Find lot size filter and apply validation (reusing existing logic)
+        # Find lot size and notional filters
         lot_size_filter = None
+        min_notional_filter = None
         for f in symbol_info['filters']:
             if f['filterType'] == 'LOT_SIZE':
                 lot_size_filter = f
-                break
+            elif f['filterType'] == 'MIN_NOTIONAL':
+                min_notional_filter = f
                 
         if lot_size_filter:
             step_size = float(lot_size_filter['stepSize'])
             quantity = round(quantity / step_size) * step_size
             
-        # Check minimum quantity (reusing existing logic)
+        # Check minimum quantity
         min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
         if quantity < min_qty:
             return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
+        
+        # Check minimum notional value
+        if min_notional_filter:
+            current_price = dust_position['price']
+            notional_value = quantity * current_price
+            min_notional = float(min_notional_filter['minNotional'])
+            if notional_value < min_notional:
+                return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}"}
         
         # Execute market sell
         order = client.order_market_sell(symbol=symbol, quantity=quantity)
@@ -5565,41 +5575,51 @@ def convert_dust_to_bnb():
             print("ℹ️ No dust balances found for conversion")
             return {"success": True, "converted_assets": [], "message": "No dust to convert"}
         
-        # Execute dust conversion
+        # Execute dust conversion (one asset at a time)
         try:
-            # Note: Binance dust conversion has specific requirements and limitations
             print(f"   Attempting to convert: {', '.join(convertible_assets)}")
-            result = client.transfer_dust(asset=convertible_assets)
+            converted_assets = []
+            total_bnb_received = 0
             
-            if result and result.get('transferResult'):
-                total_bnb = float(result.get('totalTransfered', 0))
-                
-                print(f"✅ Dust conversion successful!")
-                print(f"   Converted assets: {', '.join(convertible_assets)}")
-                print(f"   Total BNB received: {total_bnb:.8f}")
+            for asset in convertible_assets:
+                try:
+                    result = client.transfer_dust(asset=asset)
+                    if result and result.get('transferResult'):
+                        asset_bnb = float(result.get('totalTransfered', 0))
+                        total_bnb_received += asset_bnb
+                        converted_assets.append(asset)
+                        print(f"   ✅ {asset} → {asset_bnb:.8f} BNB")
+                except Exception as e:
+                    print(f"   ❌ {asset} conversion failed: {e}")
+                    continue
+            
+            if converted_assets:
+                print(f"✅ Dust conversion completed!")
+                print(f"   Converted assets: {', '.join(converted_assets)}")
+                print(f"   Total BNB received: {total_bnb_received:.8f}")
                 
                 # Log the conversion
                 log_trade_to_csv(
                     action="DUST_CONVERSION",
                     symbol="DUST_TO_BNB",
-                    quantity=len(convertible_assets),
+                    quantity=len(converted_assets),
                     price=0,
-                    value=total_bnb,
+                    value=total_bnb_received,
                     fee=0,
                     additional_data={
-                        'converted_assets': convertible_assets,
-                        'total_bnb_received': total_bnb
+                        'converted_assets': converted_assets,
+                        'total_bnb_received': total_bnb_received
                     }
                 )
                 
                 return {
                     "success": True,
-                    "converted_assets": convertible_assets,
-                    "total_bnb_received": total_bnb,
-                    "details": result
+                    "converted_assets": converted_assets,
+                    "total_bnb_received": total_bnb_received
                 }
             else:
-                return {"success": False, "error": "Dust conversion failed - no transfer result", "details": result}
+                print("ℹ️ No assets could be converted to BNB")
+                return {"success": False, "error": "No assets eligible for dust conversion"}
                 
         except Exception as e:
             if "Insufficient balance" in str(e) or "does not meet the minimum threshold" in str(e):
