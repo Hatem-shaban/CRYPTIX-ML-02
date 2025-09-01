@@ -2000,7 +2000,20 @@ def check_coin_balance(symbol):
         return False, 0, error_msg
 
 def signal_generator(df, symbol="BTCUSDT"):
-    print("\n=== Generating Trading Signal ===")  # Debug log
+    print("\n=== Generating Trading Signal ===")
+    print(f"Analyzing market sentiment from order book and trade data...")
+    
+    # Display available modules status
+    if SMART_OPTIMIZER_AVAILABLE:
+        print("🧠 Smart Signal Optimizer: ✅ Available")
+    else:
+        print("🧠 Smart Signal Optimizer: ❌ Not Available")
+    
+    if ENHANCED_MODULES_AVAILABLE:
+        print("🎯 Enhanced ML Modules: ✅ Available")
+    else:
+        print("🎯 Enhanced ML Modules: ❌ Not Available")
+        
     if df is None or len(df) < 30:
         print(f"Insufficient data for {symbol}")  # Debug log
         signal = "HOLD"
@@ -2174,7 +2187,8 @@ def signal_generator(df, symbol="BTCUSDT"):
                 # Continue with original signal if filtering fails
         
         # Smart Signal Optimization (NEW - for maximum profitability)
-        if SMART_OPTIMIZER_AVAILABLE and signal != "HOLD":
+        # Run optimizer for ALL signals (including HOLD) to find hidden opportunities
+        if SMART_OPTIMIZER_AVAILABLE:
             print(f"\n🧠 Applying smart profitability optimization...")
             
             try:
@@ -2191,24 +2205,31 @@ def signal_generator(df, symbol="BTCUSDT"):
                     symbol, signal, df, indicators, current_balance
                 )
                 
-                print(f"   Original Signal: {signal}")
-                print(f"   Optimized Signal: {optimization_result['optimized_signal']}")
-                print(f"   Optimization Confidence: {optimization_result['confidence']:.2f}")
-                print(f"   Optimization Reason: {optimization_result['reason']}")
+                print(f"   📊 Original Signal: {signal}")
+                print(f"   🎯 Optimized Signal: {optimization_result['optimized_signal']}")
+                print(f"   📈 Optimization Confidence: {optimization_result['confidence']:.2f}")
+                print(f"   💡 Optimization Reason: {optimization_result['reason']}")
                 
                 if 'factors' in optimization_result:
                     factors = optimization_result['factors']
-                    print(f"   Profitability Score: {factors.get('profitability_score', 0):.2f}")
-                    print(f"   Timing Score: {factors.get('timing_score', 0):.2f}")
-                    print(f"   Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
-                    print(f"   Momentum Score: {factors.get('momentum_score', 0):.2f}")
+                    print(f"   💰 Profitability Score: {factors.get('profitability_score', 0):.2f}")
+                    print(f"   ⏰ Timing Score: {factors.get('timing_score', 0):.2f}")
+                    print(f"   ⚖️ Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
+                    print(f"   🚀 Momentum Score: {factors.get('momentum_score', 0):.2f}")
                 
                 if optimization_result['should_wait']:
                     print(f"   📊 Optimization suggests waiting: {optimization_result.get('timing_details', {}).get('wait_reason', 'Better timing expected')}")
                 
-                # Update signal with optimized result
-                signal = optimization_result['optimized_signal']
-                reason = f"Smart Optimizer: {optimization_result['reason']}"
+                # Update signal with optimized result if it's different and confidence is good
+                if optimization_result['optimized_signal'] != signal and optimization_result['confidence'] > 0.6:
+                    original_signal = signal
+                    signal = optimization_result['optimized_signal']
+                    reason = f"Smart Optimizer: {optimization_result['reason']} (Original: {original_signal})"
+                    print(f"   🔄 Signal changed from {original_signal} to {signal} by Smart Optimizer")
+                elif optimization_result['optimized_signal'] == signal:
+                    print(f"   ✅ Smart Optimizer confirms {signal} signal")
+                else:
+                    print(f"   ⚠️ Smart Optimizer suggests {optimization_result['optimized_signal']} but confidence too low ({optimization_result['confidence']:.2f})")
                 
                 # Store optimization metrics in bot status
                 bot_status['last_optimization'] = {

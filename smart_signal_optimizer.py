@@ -232,22 +232,54 @@ class SmartSignalOptimizer:
             should_wait = False
             
             if signal == "BUY":
-                # For buying, we want to catch falling knives at support
-                if price_momentum < -0.02 and volume_ratio > 1.5:  # Strong selling with volume
+                # For buying, we want to catch falling knives at support or oversold bounces
+                if price_momentum < -0.02 and volume_ratio > 1.5:  # Strong selling with volume - good for buying
+                    timing_score += 0.3
+                elif price_momentum < -0.01:  # Moderate selling - still good for buying dips
                     timing_score += 0.2
                 elif price_momentum > 0.03:  # Price rising too fast
-                    timing_score -= 0.3
+                    timing_score -= 0.2
                     should_wait = True
                     wait_reason = "Price rising too fast - wait for pullback"
+                elif price_momentum > 0.015:  # Moderate rise - not ideal but not terrible
+                    timing_score -= 0.1
                 
-                # High volatility can be good for buying dips
+                # High volatility can be good for buying dips if we catch the bottom
                 if volatility > 0.03:  # High volatility
+                    timing_score += 0.15
+                elif volatility > 0.02:  # Moderate volatility
                     timing_score += 0.1
                     
             elif signal == "SELL":
                 # For selling, we want momentum and volume confirmation
-                if price_momentum > 0.02 and volume_ratio > 1.5:  # Strong buying with volume
+                if price_momentum > 0.02 and volume_ratio > 1.5:  # Strong buying with volume - good for selling
+                    timing_score += 0.3
+                elif price_momentum > 0.01:  # Moderate buying - still decent for selling
                     timing_score += 0.2
+                elif price_momentum < -0.02:  # Strong decline - not good for selling
+                    timing_score -= 0.2
+                    should_wait = True
+                    wait_reason = "Price declining - wait for bounce before selling"
+                elif price_momentum < -0.01:  # Moderate decline
+                    timing_score -= 0.1
+                
+                # Lower volatility preferred for selling (more predictable exits)
+                if volatility < 0.01:  # Low volatility
+                    timing_score += 0.1
+            
+            # For HOLD signals, check if conditions suggest we should consider trading
+            elif signal == "HOLD":
+                # Check for oversold bounce opportunities (HOLD -> BUY)
+                if price_momentum < -0.03 and volume_ratio > 2.0:  # Severe oversold with volume
+                    timing_score += 0.4  # Strong signal to consider buying
+                elif price_momentum < -0.015 and volume_ratio > 1.3:  # Moderate oversold
+                    timing_score += 0.2
+                
+                # Check for overbought selling opportunities (HOLD -> SELL)  
+                elif price_momentum > 0.03 and volume_ratio > 2.0:  # Strong rally with volume
+                    timing_score += 0.3  # Consider selling into strength
+                elif price_momentum > 0.02 and volume_ratio > 1.3:  # Moderate rally
+                    timing_score += 0.15
                 elif price_momentum < -0.03:  # Price falling too fast
                     timing_score -= 0.3
                     should_wait = True
@@ -394,22 +426,46 @@ class SmartSignalOptimizer:
             should_wait = timing_analysis['should_wait']
             optimized_signal = signal
             
-            # High confidence threshold for execution
-            min_confidence = 0.65
+            # Adaptive confidence threshold - lower for better opportunities
+            base_confidence = 0.55  # Lowered from 0.65 for more opportunities
             
-            if confidence < min_confidence:
-                optimized_signal = "HOLD"
-                reason = f"Low confidence ({confidence:.2f} < {min_confidence})"
-            elif should_wait:
-                optimized_signal = "HOLD"
-                reason = f"Good setup but timing suggests waiting: {timing_analysis['wait_reason']}"
-            else:
-                if signal == "BUY":
-                    reason = f"Optimized BUY - High confidence buying opportunity (Score: {confidence:.2f})"
-                elif signal == "SELL":
-                    reason = f"Optimized SELL - High confidence selling opportunity (Score: {confidence:.2f})"
+            # Even if original signal is HOLD, check if we can find a trading opportunity
+            if signal == "HOLD":
+                # For HOLD signals, check if we can upgrade to BUY/SELL based on strong factors
+                if profitability_score > 0.7 and timing_analysis['timing_score'] > 0.6:
+                    if momentum_score > 0.6:  # Strong bullish momentum
+                        optimized_signal = "BUY"
+                        reason = f"Smart Optimizer found BUY opportunity despite HOLD signal (Profit: {profitability_score:.2f}, Timing: {timing_analysis['timing_score']:.2f})"
+                    elif momentum_score < 0.4:  # Strong bearish momentum and we have assets
+                        optimized_signal = "SELL"
+                        reason = f"Smart Optimizer found SELL opportunity despite HOLD signal (Profit: {profitability_score:.2f}, Timing: {timing_analysis['timing_score']:.2f})"
+                    else:
+                        reason = f"Good setup found but momentum unclear (Score: {confidence:.2f})"
+                elif profitability_score > 0.8:  # Exceptional profitability even with lower timing
+                    if momentum_score > 0.5:
+                        optimized_signal = "BUY" 
+                        reason = f"Exceptional profitability BUY opportunity (Score: {profitability_score:.2f})"
+                    else:
+                        reason = f"High profitability but waiting for better momentum (Score: {confidence:.2f})"
                 else:
-                    reason = f"Optimized {signal} - Confidence: {confidence:.2f}"
+                    reason = f"HOLD confirmed - no strong trading opportunity (Score: {confidence:.2f})"
+            else:
+                # For non-HOLD signals, apply confidence threshold
+                min_confidence = base_confidence
+                
+                if confidence < min_confidence:
+                    optimized_signal = "HOLD"
+                    reason = f"Low confidence - downgraded to HOLD ({confidence:.2f} < {min_confidence})"
+                elif should_wait:
+                    optimized_signal = "HOLD"
+                    reason = f"Good setup but timing suggests waiting: {timing_analysis['wait_reason']}"
+                else:
+                    if signal == "BUY":
+                        reason = f"Optimized BUY - High confidence buying opportunity (Score: {confidence:.2f})"
+                    elif signal == "SELL":
+                        reason = f"Optimized SELL - High confidence selling opportunity (Score: {confidence:.2f})"
+                    else:
+                        reason = f"Optimized {signal} - Confidence: {confidence:.2f}"
             
             return {
                 'optimized_signal': optimized_signal,
