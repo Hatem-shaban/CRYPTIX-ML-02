@@ -1969,6 +1969,54 @@ def get_account_balances_summary():
         log_error_to_csv(error_msg, "BALANCE_SUMMARY_ERROR", "get_account_balances_summary", "ERROR")
         return {"error": error_msg}
 
+def check_usdt_balance():
+    """Check if we have sufficient USDT balance to place a BUY order"""
+    try:
+        # Cache to reduce repeated API calls within a short window
+        if 'usdt_balance_cache' not in bot_status:
+            bot_status['usdt_balance_cache'] = {}
+        cache_entry = bot_status['usdt_balance_cache'].get('USDT')
+        now = get_cairo_time()
+        if cache_entry and (now - cache_entry['time']).total_seconds() < 180:  # 3 minute cache
+            return cache_entry['has'], cache_entry['amount'], cache_entry['msg']
+            
+        if not client:
+            return False, 0, "Client not initialized"
+            
+        # Get account balances
+        account_info = client.get_account()
+        
+        # Find USDT balance
+        usdt_balance = None
+        for balance in account_info['balances']:
+            if balance['asset'] == 'USDT':
+                usdt_balance = float(balance['free'])
+                break
+                
+        if usdt_balance is None:
+            result = (False, 0, "USDT balance not found in account")
+        else:
+            min_required = 10.0  # Minimum 10 USDT required for trades
+            has_sufficient = usdt_balance >= min_required
+            
+            result = (
+                (True, usdt_balance, f"Sufficient USDT: {usdt_balance:.2f}")
+                if has_sufficient
+                else (False, usdt_balance, f"Insufficient USDT: {usdt_balance:.2f} < {min_required:.2f}")
+            )
+            
+        # Save to cache
+        bot_status['usdt_balance_cache']['USDT'] = {
+            'has': result[0], 'amount': result[1], 'msg': result[2], 'time': now
+        }
+        return result
+        
+    except Exception as e:
+        error_msg = f"Error checking USDT balance: {e}"
+        print(f"❌ {error_msg}")
+        log_error_to_csv(error_msg, "USDT_BALANCE_CHECK_ERROR", "check_usdt_balance", "ERROR")
+        return False, 0, error_msg
+
 def check_coin_balance(symbol):
     """Check if we have sufficient balance to place a SELL order for the given symbol"""
     try:
@@ -2439,30 +2487,52 @@ def signal_generator(df, symbol="BTCUSDT"):
         elif signal == "BUY":
             print(f"\n💰 Validating conditions for BUY signal...")
             
+            # First, check if we have sufficient USDT balance
             try:
-                # Check if we're buying low (in lower part of recent range)
-                if 'high' in df.columns and 'low' in df.columns:
-                    recent_high = df['high'].tail(48).max()
-                    recent_low = df['low'].tail(48).min()
-                    price_range = recent_high - recent_low
+                has_usdt, usdt_amount, usdt_msg = check_usdt_balance()
+                
+                if not has_usdt:
+                    print(f"   ❌ Cannot execute BUY - {usdt_msg}")
+                    signal = "HOLD"
+                    reason = f"BUY blocked: {usdt_msg}"
                     
-                    if price_range > 0:
-                        range_position = (current_price - recent_low) / price_range
+                    # Log this for analysis
+                    log_signal_to_csv(signal, current_price, indicators, 
+                                    f"Strategy wanted BUY but {usdt_msg}")
+                else:
+                    print(f"   ✅ USDT balance validated - {usdt_msg}")
+                    
+                    # Additional range position check for buying
+                    try:
+                        # Check if we're buying low (in lower part of recent range)
+                        if 'high' in df.columns and 'low' in df.columns:
+                            recent_high = df['high'].tail(48).max()
+                            recent_low = df['low'].tail(48).min()
+                            price_range = recent_high - recent_low
+                            
+                            if price_range > 0:
+                                range_position = (current_price - recent_low) / price_range
+                                
+                                # Prefer buying in lower part of range (buying low)
+                                if range_position > 0.6:  # In top 40% of range
+                                    print(f"   📊 Price in upper range ({range_position:.1%}) - may wait for better entry")
+                                    # Don't block but reduce confidence
+                                    if 'Smart Optimizer:' in reason:
+                                        reason += f" (Price high in range: {range_position:.1%})"
+                                    else:
+                                        reason += f" - Price high in range: {range_position:.1%}"
+                                else:
+                                    print(f"   📊 Price in lower range ({range_position:.1%}) - good entry point")
+                                    if 'Smart Optimizer:' in reason:
+                                        reason += f" (Good entry: {range_position:.1%} in range)"
+                    except Exception as buy_analysis_error:
+                        print(f"   ⚠️ Buy analysis error: {buy_analysis_error}")
                         
-                        # Prefer buying in lower part of range (buying low)
-                        if range_position > 0.6:  # In top 40% of range
-                            print(f"   📊 Price in upper range ({range_position:.1%}) - may wait for better entry")
-                            # Don't block but reduce confidence
-                            if 'Smart Optimizer:' in reason:
-                                reason += f" (Price high in range: {range_position:.1%})"
-                            else:
-                                reason += f" - Price high in range: {range_position:.1%}"
-                        else:
-                            print(f"   📊 Price in lower range ({range_position:.1%}) - good entry point")
-                            if 'Smart Optimizer:' in reason:
-                                reason += f" (Good entry: {range_position:.1%} in range)"
-            except Exception as buy_analysis_error:
-                print(f"   ⚠️ Buy analysis error: {buy_analysis_error}")
+            except Exception as usdt_balance_error:
+                print(f"   ⚠️ USDT balance validation error: {usdt_balance_error}")
+                # If balance check fails, be conservative and hold
+                signal = "HOLD"
+                reason = f"BUY blocked: Balance check failed - {usdt_balance_error}"
         
         # Strategy-Specific ML Intelligence Analysis
         if ENHANCED_MODULES_AVAILABLE and signal != "HOLD" and config.ML_ENABLED:
@@ -3117,6 +3187,24 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         bot_status['trading_summary']['trades_history'].insert(0, trade_info)
         bot_status['errors'].append(str(e))
 
+        # Parse specific API errors for better handling
+        error_code = getattr(e, 'code', 0)
+        error_msg = str(e)
+        
+        if error_code == -2010 or "insufficient balance" in error_msg.lower():
+            trade_info['status'] = 'insufficient_funds'
+            trade_info['error'] = f"Insufficient balance: {error_msg}"
+            print(f"❌ INSUFFICIENT BALANCE ERROR: {error_msg}")
+            print(f"   This should have been caught earlier in signal generation!")
+            log_error_to_csv(f"API Balance Error (Code: {error_code}): {error_msg}", "API_ERROR", "execute_trade", "ERROR")
+        elif error_code == -1013 or "filter failure" in error_msg.lower():
+            trade_info['status'] = 'filter_failure'
+            trade_info['error'] = f"Order filter failure: {error_msg}"
+            log_error_to_csv(f"API Filter Error (Code: {error_code}): {error_msg}", "FILTER_ERROR", "execute_trade", "ERROR")
+        else:
+            trade_info['error'] = error_msg
+            log_error_to_csv(f"API Error (Code: {error_code}): {error_msg}", "API_ERROR", "execute_trade", "ERROR")
+
         # Update smart trade tracking for failed trades
         update_trade_tracking('failed', -1)
 
@@ -3644,10 +3732,37 @@ def trading_loop():
                             result = execute_trade(signal, current_symbol)
                             print(f"📊 Result: {result}")
                             
-                            # Update tracking
-                            bot_status['monitored_pairs'][current_symbol]['total_trades'] += 1
-                            if "executed" in str(result).lower():
-                                bot_status['monitored_pairs'][current_symbol]['successful_trades'] += 1
+                            # Ensure monitored_pairs structure exists and is properly initialized
+                            if current_symbol not in bot_status['monitored_pairs']:
+                                bot_status['monitored_pairs'][current_symbol] = {
+                                    'last_signal': 'HOLD',
+                                    'last_price': 0,
+                                    'rsi': 50,
+                                    'macd': {'macd': 0, 'signal': 0, 'trend': 'NEUTRAL'},
+                                    'sentiment': 'neutral',
+                                    'total_trades': 0,
+                                    'successful_trades': 0,
+                                    'last_trade_time': None
+                                }
+                            
+                            # Update tracking safely
+                            try:
+                                bot_status['monitored_pairs'][current_symbol]['total_trades'] += 1
+                                if "executed" in str(result).lower():
+                                    bot_status['monitored_pairs'][current_symbol]['successful_trades'] += 1
+                            except KeyError as ke:
+                                print(f"⚠️ Monitored pairs tracking error: {ke}")
+                                # Re-initialize if needed
+                                bot_status['monitored_pairs'][current_symbol] = {
+                                    'last_signal': signal,
+                                    'last_price': current_price,
+                                    'rsi': 50,
+                                    'macd': {'macd': 0, 'signal': 0, 'trend': 'NEUTRAL'},
+                                    'sentiment': 'neutral',
+                                    'total_trades': 1,
+                                    'successful_trades': 1 if "executed" in str(result).lower() else 0,
+                                    'last_trade_time': get_cairo_time()
+                                }
                             
                             # In hunting mode, only take the best trade
                             if bot_status.get('hunting_mode'):
