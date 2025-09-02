@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 import pickle
 import os
 
+# Import centralized model paths
+from model_paths import MODEL_PATHS
+
 # Minimal import guard to avoid crashing if sklearn is missing
 try:
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -34,13 +37,13 @@ class EnhancedMLPredictor:
         self.regime_scaler = None
         self.pattern_scaler = None
         
-        # Model paths
-        self.trend_model_path = model_path or 'rf_price_trend_model.pkl'
-        self.regime_model_path = 'rf_market_regime_model.pkl'
-        self.pattern_model_path = 'rf_pattern_recognition_model.pkl'
-        self.scaler_path = 'rf_scaler.pkl'
-        self.regime_scaler_path = 'rf_regime_scaler.pkl'
-        self.pattern_scaler_path = 'rf_pattern_scaler.pkl'
+        # Model paths using centralized configuration
+        self.trend_model_path = MODEL_PATHS['trend_model'] if model_path is None else model_path
+        self.regime_model_path = MODEL_PATHS['regime_model']
+        self.pattern_model_path = MODEL_PATHS['pattern_model']
+        self.scaler_path = MODEL_PATHS['trend_scaler']
+        self.regime_scaler_path = MODEL_PATHS['regime_scaler']
+        self.pattern_scaler_path = MODEL_PATHS['pattern_scaler']
         
         # Pattern recognition data
         self.signal_history = []
@@ -95,7 +98,7 @@ class EnhancedMLPredictor:
         ]
         
         # Load historical patterns if available
-        pattern_file = 'market_patterns.pkl'
+        pattern_file = MODEL_PATHS['market_patterns']
         if os.path.exists(pattern_file):
             try:
                 with open(pattern_file, 'rb') as f:
@@ -562,7 +565,7 @@ class EnhancedMLPredictor:
             self.market_patterns = patterns
             
             # Save patterns to file
-            with open('market_patterns.pkl', 'wb') as f:
+            with open(MODEL_PATHS['market_patterns'], 'wb') as f:
                 pickle.dump(patterns, f)
                 
             return patterns

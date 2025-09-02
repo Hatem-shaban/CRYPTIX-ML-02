@@ -16,6 +16,9 @@ import logging
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Import centralized model paths
+from model_paths import MODEL_PATHS
+
 # Safe ML imports
 try:
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier
@@ -70,26 +73,8 @@ class EnhancedMLTrainer:
             self.data_cleaner = None
             logger.warning("⚠️ Data cleaner not available - training may fail with dirty data")
         
-        # Enhanced model paths
-        self.model_paths = {
-            'trend_model': 'rf_price_trend_model.pkl',
-            'regime_model': 'rf_market_regime_model.pkl',
-            'pattern_model': 'rf_pattern_recognition_model.pkl',
-            'signal_model': 'rf_signal_success_model.pkl',
-            'volatility_model': 'rf_volatility_model.pkl',
-            
-            'trend_scaler': 'rf_scaler.pkl',
-            'regime_scaler': 'rf_regime_scaler.pkl',
-            'pattern_scaler': 'rf_pattern_scaler.pkl',
-            'signal_scaler': 'rf_signal_scaler.pkl',
-            'volatility_scaler': 'rf_volatility_scaler.pkl',
-            
-            'trend_selector': 'rf_trend_selector.pkl',
-            'regime_selector': 'rf_regime_selector.pkl',
-            'pattern_selector': 'rf_pattern_selector.pkl',
-            'signal_selector': 'rf_signal_selector.pkl',
-            'volatility_selector': 'rf_volatility_selector.pkl'
-        }
+        # Enhanced model paths - using centralized configuration
+        self.model_paths = MODEL_PATHS.copy()
         
         # Ensure logs directory exists
         os.makedirs('logs', exist_ok=True)
@@ -565,7 +550,7 @@ class EnhancedMLTrainer:
             joblib.dump(model, self.model_paths['regime_model'])
             joblib.dump(scaler, self.model_paths['regime_scaler'])
             joblib.dump(selector, self.model_paths['regime_selector'])
-            joblib.dump(label_encoder, 'rf_regime_label_encoder.pkl')
+            joblib.dump(label_encoder, self.model_paths['regime_label_encoder'])
             
             self.models['regime'] = model
             self.scalers['regime'] = scaler
