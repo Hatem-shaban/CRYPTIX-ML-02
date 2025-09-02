@@ -53,9 +53,9 @@ class MLTradingStrategy:
             self.ml_predictor = None
             self.market_intelligence = None
             
-        # Strategy parameters (optimized for profitability)
-        self.min_confidence_threshold = 0.65  # Minimum ML confidence for trades
-        self.high_confidence_threshold = 0.8   # High confidence threshold for larger positions
+        # Strategy parameters (optimized for frequent profitable trading)
+        self.min_confidence_threshold = 0.4   # Reduced for more aggressive trading
+        self.high_confidence_threshold = 0.65  # Reduced for more signals
         self.profit_target_multiplier = 1.5    # Target profit multiplier
         self.max_position_size_multiplier = 2.0  # Max position size multiplier for high confidence
         
@@ -69,14 +69,14 @@ class MLTradingStrategy:
             'max_drawdown': 0.0
         }
         
-        # Market regime awareness
+        # Market regime awareness (more aggressive thresholds)
         self.current_regime = 'NORMAL'
         self.regime_adjustments = {
-            'BULLISH_EXTREME': {'position_multiplier': 1.5, 'confidence_threshold': 0.7},
-            'BULLISH': {'position_multiplier': 1.2, 'confidence_threshold': 0.65},
-            'NEUTRAL': {'position_multiplier': 1.0, 'confidence_threshold': 0.65},
-            'BEARISH': {'position_multiplier': 0.8, 'confidence_threshold': 0.7},
-            'BEARISH_EXTREME': {'position_multiplier': 0.5, 'confidence_threshold': 0.8}
+            'BULLISH_EXTREME': {'position_multiplier': 1.5, 'confidence_threshold': 0.5},
+            'BULLISH': {'position_multiplier': 1.2, 'confidence_threshold': 0.45},
+            'NEUTRAL': {'position_multiplier': 1.0, 'confidence_threshold': 0.4},
+            'BEARISH': {'position_multiplier': 0.9, 'confidence_threshold': 0.45},
+            'BEARISH_EXTREME': {'position_multiplier': 0.7, 'confidence_threshold': 0.5}
         }
         
         logging.info(f"🧠 ML Trading Strategy initialized - Target: Smart & Profitable")
@@ -380,16 +380,27 @@ class MLTradingStrategy:
             # Minimum confidence threshold
             min_confidence = regime_adj['confidence_threshold']
             
-            # Generate signal based on scores and confidence
-            if buy_score > sell_score and buy_score > 70 and ml_confidence > min_confidence:
+            # Generate signal based on scores and confidence (more aggressive thresholds)
+            if buy_score > sell_score and buy_score > 55 and ml_confidence > min_confidence:
                 signal = "BUY"
                 confidence = buy_score / 100
                 reason = f"ML Buy Signal: Score={buy_score:.1f}, Confidence={ml_confidence:.2f}, Regime={regime}"
                 
-            elif sell_score > buy_score and sell_score > 70 and ml_confidence > min_confidence:
+            elif sell_score > buy_score and sell_score > 55 and ml_confidence > min_confidence:
                 signal = "SELL"
                 confidence = sell_score / 100
                 reason = f"ML Sell Signal: Score={sell_score:.1f}, Confidence={ml_confidence:.2f}, Regime={regime}"
+                
+            # Alternative: if scores are close but one is strong enough, trade it
+            elif buy_score > 65 and ml_confidence > (min_confidence * 0.8):
+                signal = "BUY"
+                confidence = buy_score / 100
+                reason = f"ML Buy Signal (Strong): Score={buy_score:.1f}, Confidence={ml_confidence:.2f}, Regime={regime}"
+                
+            elif sell_score > 65 and ml_confidence > (min_confidence * 0.8):
+                signal = "SELL"
+                confidence = sell_score / 100
+                reason = f"ML Sell Signal (Strong): Score={sell_score:.1f}, Confidence={ml_confidence:.2f}, Regime={regime}"
                 
             else:
                 signal = "HOLD"
@@ -432,8 +443,8 @@ class MLTradingStrategy:
             market_opportunity = analysis_data.get('market_opportunity', 50)
             timing_score = analysis_data.get('timing_score', 50)
             
-            # Expected profit calculation (simplified)
-            base_profit_expectation = 2.0  # 2% base expectation
+            # Expected profit calculation (more lenient for frequent trading)
+            base_profit_expectation = 1.0  # Reduced to 1% base expectation
             confidence_multiplier = confidence * 2  # Up to 2x multiplier
             timing_multiplier = timing_score / 50  # 0.5x to 2x based on timing
             opportunity_multiplier = market_opportunity / 50  # 0.5x to 2x based on opportunity
@@ -441,23 +452,24 @@ class MLTradingStrategy:
             expected_profit = (base_profit_expectation * confidence_multiplier * 
                              timing_multiplier * opportunity_multiplier)
             
-            # Profitability threshold (aim for 1%+ expected profit per trade)
-            profitability_threshold = 1.0
+            # More lenient profitability threshold for aggressive trading
+            profitability_threshold = 0.5  # Reduced from 1.0% to 0.5%
             
             if expected_profit < profitability_threshold:
                 # Signal doesn't meet profitability requirements
                 return "HOLD", f"Low Profit Potential: {expected_profit:.1f}% < {profitability_threshold}% threshold"
             
-            # Additional checks for buy low/sell high optimization
-            if signal == "BUY":
-                position_score = analysis_data.get('position_analysis', {}).get('average_position', 0.5)
-                if position_score > 0.6:  # Buying too high in range
-                    return "HOLD", f"Buy price too high in range ({position_score:.1%}) - waiting for better entry"
-                    
-            elif signal == "SELL":
-                position_score = analysis_data.get('position_analysis', {}).get('average_position', 0.5)
-                if position_score < 0.4:  # Selling too low in range
-                    return "HOLD", f"Sell price too low in range ({position_score:.1%}) - waiting for higher price"
+            # Disable position range validation for more aggressive trading
+            # (Buy low/sell high logic can be re-enabled later if needed)
+            # if signal == "BUY":
+            #     position_score = analysis_data.get('position_analysis', {}).get('average_position', 0.5)
+            #     if position_score > 0.75:  # Only reject if buying very high in range
+            #         return "HOLD", f"Buy price too high in range ({position_score:.1%}) - waiting for better entry"
+            #         
+            # elif signal == "SELL":
+            #     position_score = analysis_data.get('position_analysis', {}).get('average_position', 0.5)
+            #     if position_score < 0.25:  # Only reject if selling very low in range
+            #         return "HOLD", f"Sell price too low in range ({position_score:.1%}) - waiting for higher price"
             
             # Signal passed profitability validation
             enhanced_reason = f"{reason} | Expected Profit: {expected_profit:.1f}%"
@@ -486,21 +498,22 @@ class MLTradingStrategy:
     
     def _calculate_ml_confidence_score(self, buy_prob: float, sell_prob: float, 
                                      regime_pred: Dict, market_analysis: Dict) -> float:
-        """Calculate overall ML confidence score"""
+        """Calculate overall ML confidence score (more generous for frequent trading)"""
         try:
-            # Signal probabilities confidence
-            signal_confidence = max(abs(buy_prob - 0.5), abs(sell_prob - 0.5)) * 2
+            # Signal probabilities confidence (boosted)
+            signal_confidence = max(abs(buy_prob - 0.5), abs(sell_prob - 0.5)) * 2.5  # Increased multiplier
             
-            # Regime prediction confidence
-            regime_confidence = regime_pred.get('confidence', 0.5)
+            # Regime prediction confidence (boosted)
+            regime_confidence = min(0.9, regime_pred.get('confidence', 0.5) * 1.2)  # 20% boost
             
-            # Market intelligence confidence
-            market_confidence = market_analysis.get('intelligence_score', 0.5)
+            # Market intelligence confidence (boosted)
+            market_confidence = min(0.9, market_analysis.get('intelligence_score', 0.5) * 1.3)  # 30% boost
             
-            # Weighted average
-            overall_confidence = (signal_confidence * 0.4 + regime_confidence * 0.3 + market_confidence * 0.3)
+            # Weighted average with base boost for aggressive trading
+            base_boost = 0.15  # 15% base confidence boost
+            overall_confidence = (signal_confidence * 0.4 + regime_confidence * 0.3 + market_confidence * 0.3) + base_boost
             
-            return min(0.95, max(0.1, overall_confidence))
+            return min(0.95, max(0.2, overall_confidence))
             
         except Exception:
             return 0.5
