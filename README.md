@@ -1,6 +1,6 @@
 # CRYPTIX-ML Trading Bot
 
-An intelligent cryptocurrency trading bot with machine learning capabilities, technical analysis, and automated risk management.
+An intelligent cryptocurrency trading bot with machine learning capabilities, technical analysis, automated risk management, and **automated ML model training**.
 
 ## 🚀 Quick Start
 
@@ -26,6 +26,26 @@ An intelligent cryptocurrency trading bot with machine learning capabilities, te
    ```bash
    python web_bot.py
    ```
+
+## ✨ New Feature: Automated ML Training
+
+The bot now includes **automated ML model training** that runs during off-peak hours:
+
+- **🤖 Smart Scheduling**: Automatically trains models at 2 AM daily during low trading activity
+- **📊 Intelligent Retraining**: Only retrains when models are older than 7 days
+- **🔄 Incremental Updates**: Efficient data loading without full redownload
+- **☁️ Render Optimized**: Lightweight design perfect for cloud deployment
+
+### Simple Control:
+```bash
+# Check training status via API
+curl http://your-app.onrender.com/api/ml-training/status
+
+# Force immediate training
+curl -X POST http://your-app.onrender.com/api/ml-training/force
+```
+
+The scheduler starts automatically when you run the bot - no additional setup required!
 
 ## 📋 Prerequisites
 
