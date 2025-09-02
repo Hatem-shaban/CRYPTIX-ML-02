@@ -2202,102 +2202,194 @@ def signal_generator(df, symbol="BTCUSDT"):
             print(f"Unknown strategy {strategy}, defaulting to ADAPTIVE")  # Debug log
             signal, reason = adaptive_strategy(df, symbol, indicators)  # Default to adaptive
         
-        # Enhanced Signal Filtering (if modules available)
+        # Strategy-Specific Signal Processing
         if ENHANCED_MODULES_AVAILABLE and signal != "HOLD":
-            print(f"\n🔍 Applying enhanced signal filtering...")
+            if strategy == 'ML_PURE':
+                print(f"\n🧠 Applying ML_PURE optimized signal processing...")
+                
+                # ML_PURE uses its own internal validation - apply minimal external filtering
+                # Only check for critical risk factors, not conservative quality filters
+                try:
+                    # Prepare minimal market data for critical risk assessment only
+                    market_data = {
+                        'volume_24h': getattr(df, 'volume', pd.Series([1000000])).iloc[-1] if hasattr(df, 'volume') else 1000000,
+                        'price_change_24h_pct': indicators.get('price_change_24h', 0),
+                        'volume_ratio': indicators.get('volume_ratio', 1.0),
+                        'spread_pct': 0.05,
+                        'volume_consistency': 0.5
+                    }
+                    
+                    # Use much more lenient filtering for ML_PURE (confidence threshold 0.35 vs 0.65)
+                    signal_filter = get_signal_filter()
+                    filtered_result = signal_filter.filter_and_validate_signal(
+                        symbol, signal, indicators, market_data, confidence_threshold=0.35
+                    )
+                    
+                    print(f"   ML Raw Signal: {signal}")
+                    print(f"   ML Validated Signal: {filtered_result['signal']}")
+                    print(f"   ML Confidence: {filtered_result['confidence']:.2f}")
+                    print(f"   Risk Assessment: {filtered_result['filters_passed']}/7 checks passed")
+                    
+                    # For ML_PURE, only override if critical risk factors are detected
+                    if filtered_result['filters_passed'] >= 3:  # Much more lenient (3/7 vs 5/7)
+                        # Keep ML signal - just log the validation
+                        print(f"   ✅ ML_PURE signal validated: {signal}")
+                        reason = f"ML {reason} - Risk Assessment: {filtered_result['filters_passed']}/7"
+                    else:
+                        # Only override for serious risk concerns
+                        signal = filtered_result['signal']
+                        reason = f"ML Risk Override: {filtered_result['reason']}"
+                        print(f"   ⚠️ ML_PURE signal overridden due to high risk")
+                    
+                except Exception as filter_error:
+                    print(f"   ⚠️ ML signal validation error: {filter_error}")
+                    # Continue with ML signal if validation fails
+                    
+            else:
+                # Standard Enhanced Signal Filtering for non-ML strategies
+                print(f"\n🔍 Applying enhanced signal filtering...")
+                
+                # Prepare market data for filtering
+                market_data = {
+                    'volume_24h': getattr(df, 'volume', pd.Series([1000000])).iloc[-1] if hasattr(df, 'volume') else 1000000,
+                    'price_change_24h_pct': indicators.get('price_change_24h', 0),
+                    'volume_ratio': indicators.get('volume_ratio', 1.0),
+                    'spread_pct': 0.05,  # Default spread
+                    'volume_consistency': 0.5  # Default consistency
+                }
+                
+                try:
+                    signal_filter = get_signal_filter()
+                    filtered_result = signal_filter.filter_and_validate_signal(
+                        symbol, signal, indicators, market_data, confidence_threshold=0.65
+                    )
+                    
+                    print(f"   Raw Signal: {signal}")
+                    print(f"   Filtered Signal: {filtered_result['signal']}")
+                    print(f"   Confidence: {filtered_result['confidence']:.2f}")
+                    print(f"   Quality Score: {filtered_result['quality_score']:.2f}")
+                    print(f"   Filters Passed: {filtered_result['filters_passed']}/7")
+                    print(f"   Reason: {filtered_result['reason']}")
+                    
+                    # Update signal and reason with filtered results
+                    signal = filtered_result['signal']
+                    reason = f"Enhanced Filter: {filtered_result['reason']}"
+                    
+                except Exception as filter_error:
+                    print(f"   ⚠️ Signal filtering error: {filter_error}")
+                    # Continue with original signal if filtering fails
             
-            # Prepare market data for filtering
-            market_data = {
-                'volume_24h': getattr(df, 'volume', pd.Series([1000000])).iloc[-1] if hasattr(df, 'volume') else 1000000,
-                'price_change_24h_pct': indicators.get('price_change_24h', 0),
-                'volume_ratio': indicators.get('volume_ratio', 1.0),
-                'spread_pct': 0.05,  # Default spread
-                'volume_consistency': 0.5  # Default consistency
-            }
-            
-            try:
-                signal_filter = get_signal_filter()
-                filtered_result = signal_filter.filter_and_validate_signal(
-                    symbol, signal, indicators, market_data, confidence_threshold=0.65
-                )
-                
-                print(f"   Raw Signal: {signal}")
-                print(f"   Filtered Signal: {filtered_result['signal']}")
-                print(f"   Confidence: {filtered_result['confidence']:.2f}")
-                print(f"   Quality Score: {filtered_result['quality_score']:.2f}")
-                print(f"   Filters Passed: {filtered_result['filters_passed']}/7")
-                print(f"   Reason: {filtered_result['reason']}")
-                
-                # Update signal and reason with filtered results
-                signal = filtered_result['signal']
-                reason = f"Enhanced Filter: {filtered_result['reason']}"
-                
-                # Store filtering metrics in bot status
+            # Store filtering metrics in bot status (for both strategies)
+            if 'filtered_result' in locals():
                 bot_status['last_signal_quality'] = {
                     'confidence': filtered_result['confidence'],
                     'quality_score': filtered_result['quality_score'],
                     'filters_passed': filtered_result['filters_passed']
                 }
-                
-            except Exception as filter_error:
-                print(f"   ⚠️ Signal filtering error: {filter_error}")
-                # Continue with original signal if filtering fails
         
-        # Smart Signal Optimization (NEW - for maximum profitability)
-        # Run optimizer for ALL signals (including HOLD) to find hidden opportunities
+        # Strategy-Specific Smart Signal Optimization
         if SMART_OPTIMIZER_AVAILABLE:
-            print(f"\n🧠 Applying smart profitability optimization...")
+            if strategy == 'ML_PURE':
+                print(f"\n🧠 Applying ML_PURE smart optimization...")
+                
+                try:
+                    # Get current balances for optimization
+                    current_balance = {}
+                    if client:
+                        account_info = client.get_account()
+                        for balance in account_info['balances']:
+                            if float(balance['free']) > 0:
+                                current_balance[balance['asset']] = float(balance['free'])
+                    
+                    signal_optimizer = get_signal_optimizer()
+                    optimization_result = signal_optimizer.optimize_entry_exit(
+                        symbol, signal, df, indicators, current_balance
+                    )
+                    
+                    print(f"   📊 ML Original Signal: {signal}")
+                    print(f"   🎯 ML Optimized Signal: {optimization_result['optimized_signal']}")
+                    print(f"   📈 ML Optimization Confidence: {optimization_result['confidence']:.2f}")
+                    print(f"   💡 ML Optimization Reason: {optimization_result['reason']}")
+                    
+                    if 'factors' in optimization_result:
+                        factors = optimization_result['factors']
+                        print(f"   💰 Profitability Score: {factors.get('profitability_score', 0):.2f}")
+                        print(f"   ⏰ Timing Score: {factors.get('timing_score', 0):.2f}")
+                        print(f"   ⚖️ Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
+                        print(f"   🚀 Momentum Score: {factors.get('momentum_score', 0):.2f}")
+                    
+                    # For ML_PURE, be more conservative about overriding ML decisions
+                    # Only override if optimizer has very high confidence (0.75+) and suggests something different
+                    if optimization_result['optimized_signal'] != signal and optimization_result['confidence'] > 0.75:
+                        original_signal = signal
+                        signal = optimization_result['optimized_signal']
+                        reason = f"ML Optimizer Override: {optimization_result['reason']} (ML Original: {original_signal})"
+                        print(f"   🔄 ML signal changed from {original_signal} to {signal} by high-confidence optimizer")
+                    elif optimization_result['optimized_signal'] == signal:
+                        print(f"   ✅ ML Optimizer confirms {signal} signal")
+                        reason = f"ML Confirmed: {reason}"
+                    else:
+                        print(f"   ℹ️ ML Optimizer suggests {optimization_result['optimized_signal']} but respecting ML decision ({optimization_result['confidence']:.2f} < 0.75)")
+                    
+                except Exception as optimizer_error:
+                    print(f"   ⚠️ ML optimization error: {optimizer_error}")
+                    # Continue with ML signal if optimization fails
+                    
+            else:
+                # Standard Smart Signal Optimization for non-ML strategies
+                print(f"\n🧠 Applying smart profitability optimization...")
+                
+                try:
+                    # Get current balances for optimization
+                    current_balance = {}
+                    if client:
+                        account_info = client.get_account()
+                        for balance in account_info['balances']:
+                            if float(balance['free']) > 0:
+                                current_balance[balance['asset']] = float(balance['free'])
+                    
+                    signal_optimizer = get_signal_optimizer()
+                    optimization_result = signal_optimizer.optimize_entry_exit(
+                        symbol, signal, df, indicators, current_balance
+                    )
+                    
+                    print(f"   📊 Original Signal: {signal}")
+                    print(f"   🎯 Optimized Signal: {optimization_result['optimized_signal']}")
+                    print(f"   📈 Optimization Confidence: {optimization_result['confidence']:.2f}")
+                    print(f"   💡 Optimization Reason: {optimization_result['reason']}")
+                    
+                    if 'factors' in optimization_result:
+                        factors = optimization_result['factors']
+                        print(f"   💰 Profitability Score: {factors.get('profitability_score', 0):.2f}")
+                        print(f"   ⏰ Timing Score: {factors.get('timing_score', 0):.2f}")
+                        print(f"   ⚖️ Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
+                        print(f"   🚀 Momentum Score: {factors.get('momentum_score', 0):.2f}")
+                    
+                    if optimization_result['should_wait']:
+                        print(f"   📊 Optimization suggests waiting: {optimization_result.get('timing_details', {}).get('wait_reason', 'Better timing expected')}")
+                    
+                    # Update signal with optimized result if it's different and confidence is good
+                    if optimization_result['optimized_signal'] != signal and optimization_result['confidence'] > 0.6:
+                        original_signal = signal
+                        signal = optimization_result['optimized_signal']
+                        reason = f"Smart Optimizer: {optimization_result['reason']} (Original: {original_signal})"
+                        print(f"   🔄 Signal changed from {original_signal} to {signal} by Smart Optimizer")
+                    elif optimization_result['optimized_signal'] == signal:
+                        print(f"   ✅ Smart Optimizer confirms {signal} signal")
+                    else:
+                        print(f"   ⚠️ Smart Optimizer suggests {optimization_result['optimized_signal']} but confidence too low ({optimization_result['confidence']:.2f})")
+                    
+                except Exception as optimizer_error:
+                    print(f"   ⚠️ Signal optimization error: {optimizer_error}")
+                    # Continue with filtered signal if optimization fails
             
-            try:
-                # Get current balances for optimization
-                current_balance = {}
-                if client:
-                    account_info = client.get_account()
-                    for balance in account_info['balances']:
-                        if float(balance['free']) > 0:
-                            current_balance[balance['asset']] = float(balance['free'])
-                
-                signal_optimizer = get_signal_optimizer()
-                optimization_result = signal_optimizer.optimize_entry_exit(
-                    symbol, signal, df, indicators, current_balance
-                )
-                
-                print(f"   📊 Original Signal: {signal}")
-                print(f"   🎯 Optimized Signal: {optimization_result['optimized_signal']}")
-                print(f"   📈 Optimization Confidence: {optimization_result['confidence']:.2f}")
-                print(f"   💡 Optimization Reason: {optimization_result['reason']}")
-                
-                if 'factors' in optimization_result:
-                    factors = optimization_result['factors']
-                    print(f"   💰 Profitability Score: {factors.get('profitability_score', 0):.2f}")
-                    print(f"   ⏰ Timing Score: {factors.get('timing_score', 0):.2f}")
-                    print(f"   ⚖️ Risk/Reward Ratio: {factors.get('risk_reward_ratio', 0):.2f}")
-                    print(f"   🚀 Momentum Score: {factors.get('momentum_score', 0):.2f}")
-                
-                if optimization_result['should_wait']:
-                    print(f"   📊 Optimization suggests waiting: {optimization_result.get('timing_details', {}).get('wait_reason', 'Better timing expected')}")
-                
-                # Update signal with optimized result if it's different and confidence is good
-                if optimization_result['optimized_signal'] != signal and optimization_result['confidence'] > 0.6:
-                    original_signal = signal
-                    signal = optimization_result['optimized_signal']
-                    reason = f"Smart Optimizer: {optimization_result['reason']} (Original: {original_signal})"
-                    print(f"   🔄 Signal changed from {original_signal} to {signal} by Smart Optimizer")
-                elif optimization_result['optimized_signal'] == signal:
-                    print(f"   ✅ Smart Optimizer confirms {signal} signal")
-                else:
-                    print(f"   ⚠️ Smart Optimizer suggests {optimization_result['optimized_signal']} but confidence too low ({optimization_result['confidence']:.2f})")
-                
-                # Store optimization metrics in bot status
+            # Store optimization metrics in bot status (for both strategies)
+            if 'optimization_result' in locals():
                 bot_status['last_optimization'] = {
                     'confidence': optimization_result['confidence'],
                     'factors': optimization_result.get('factors', {}),
                     'should_wait': optimization_result['should_wait']
                 }
-                
-            except Exception as optimizer_error:
-                print(f"   ⚠️ Signal optimization error: {optimizer_error}")
-                # Continue with filtered signal if optimization fails
         
         # Smart Balance Validation (NEW) - Ensure we can actually execute the signal
         if signal == "SELL":
