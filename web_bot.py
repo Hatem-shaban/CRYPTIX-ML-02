@@ -6,7 +6,7 @@ import config  # Import trading configuration
 import os, time, threading, subprocess
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from textblob import TextBlob
 import requests  # Added for Coinbase API calls
 import pytz
@@ -17,7 +17,6 @@ import zipfile
 # from keep_alive import keep_alive  # Disabled to avoid Flask conflicts
 import sys
 import json
-from datetime import datetime, timedelta
 from typing import Optional  # Add this import for Python version compatibility
 
 # Import enhanced trading modules
@@ -110,6 +109,49 @@ def _verbose() -> bool:
         return str(os.getenv("VERBOSE_LOGS", "")).strip().lower() in {"1", "true", "yes", "on", "debug"}
     except Exception:
         return False
+
+def update_bot_status_common(symbol, signal, price, df=None, score=0):
+    """Helper to reduce duplicate bot_status update patterns"""
+    bot_status.update({
+        'current_symbol': symbol,
+        'last_signal': signal,
+        'last_price': price,
+        'last_update': format_cairo_time(),
+        'rsi': float(df['rsi'].iloc[-1]) if df is not None and 'rsi' in df.columns else 50,
+        'macd': {
+            'macd': float(df['macd'].iloc[-1]) if df is not None and 'macd' in df.columns else 0,
+            'signal': float(df['macd_signal'].iloc[-1]) if df is not None and 'macd_signal' in df.columns else 0,
+            'trend': df['macd_trend'].iloc[-1] if df is not None and 'macd_trend' in df.columns else 'NEUTRAL'
+        },
+        'opportunity_score': score
+    })
+
+def update_monitored_pair(symbol, signal, price, df, score=0):
+    """Helper to update monitored pairs tracking"""
+    bot_status['monitored_pairs'][symbol] = {
+        'last_signal': signal,
+        'last_price': price,
+        'rsi': float(df['rsi'].iloc[-1]) if 'rsi' in df.columns else 50,
+        'macd': {
+            'macd': float(df['macd'].iloc[-1]) if 'macd' in df.columns else 0,
+            'signal': float(df['macd_signal'].iloc[-1]) if 'macd_signal' in df.columns else 0,
+            'trend': df['macd_trend'].iloc[-1] if 'macd_trend' in df.columns else 'NEUTRAL'
+        },
+        'last_update': format_cairo_time(),
+        'opportunity_score': score
+    }
+
+def safe_operation(operation_name, operation_func, default_return=None, log_error=True):
+    """Helper to handle exceptions consistently"""
+    try:
+        return operation_func()
+    except Exception as e:
+        if log_error:
+            error_msg = f"{operation_name} failed: {str(e)}"
+            if _verbose():
+                print(f"⚠️ {error_msg}")
+            log_error_to_csv(error_msg, "OPERATION_ERROR", operation_name, "ERROR")
+        return default_return
 
 # Cairo timezone
 CAIRO_TZ = pytz.timezone('Africa/Cairo')
@@ -2028,10 +2070,7 @@ def signal_generator(df, symbol="BTCUSDT"):
     if df is None or len(df) < 30:
         print(f"Insufficient data for {symbol}")  # Debug log
         signal = "HOLD"
-        bot_status.update({
-            'last_signal': signal,
-            'last_update': format_cairo_time()
-        })
+        update_bot_status_common(symbol, signal, 0)
         log_signal_to_csv(signal, 0, {"symbol": symbol}, "Insufficient data")
         return signal
     
@@ -2428,11 +2467,8 @@ def signal_generator(df, symbol="BTCUSDT"):
                 
         # Update bot status with latest signal and timestamp
         current_time = format_cairo_time()
-        bot_status.update({
-            'last_signal': signal,
-            'last_update': current_time,
-            'last_strategy': strategy
-        })
+        update_bot_status_common(symbol, signal, current_price, df)
+        bot_status.update({'last_strategy': strategy})
             
         print(f"Strategy {strategy} generated final signal: {signal} - {reason}")  # Debug log
         
@@ -3218,27 +3254,11 @@ def trading_loop():
                     
                     # Update pair tracking
                     if current_symbol not in bot_status['monitored_pairs']:
-                        bot_status['monitored_pairs'][current_symbol] = {
-                            'last_signal': signal,
-                            'last_price': current_price,
-                            'rsi': float(df['rsi'].iloc[-1]),
-                            'macd': {
-                                'macd': float(df['macd'].iloc[-1]),
-                                'signal': float(df['macd_signal'].iloc[-1]),
-                                'trend': df['macd_trend'].iloc[-1]
-                            },
-                            'last_update': format_cairo_time(),
-                            'opportunity_score': current_score
-                        }
+                        update_monitored_pair(current_symbol, signal, current_price, df, current_score)
                     
                     # Update main status with best target
                     if i == 0:
-                        bot_status.update({
-                            'current_symbol': current_symbol,
-                            'last_signal': signal,
-                            'last_price': current_price,
-                            'last_update': format_cairo_time()
-                        })
+                        update_bot_status_common(current_symbol, signal, current_price, df, current_score)
                     
                     signals_generated += 1
             
@@ -3362,19 +3382,8 @@ def trading_loop():
                         signal = signal_generator(df, current_symbol)
                         current_price = float(df['close'].iloc[-1])
                         
-                        bot_status.update({
-                            'current_symbol': current_symbol,
-                            'last_signal': signal,
-                            'last_price': current_price,
-                            'last_update': format_cairo_time(),
-                            'rsi': float(df['rsi'].iloc[-1]),
-                            'macd': {
-                                'macd': float(df['macd'].iloc[-1]),
-                                'signal': float(df['macd_signal'].iloc[-1]),
-                                'trend': df['macd_trend'].iloc[-1]
-                            },
-                            'last_btc_scan_time': current_time  # Track when we last scanned BTC
-                        })
+                        update_bot_status_common(current_symbol, signal, current_price, df)
+                        bot_status.update({'last_btc_scan_time': current_time})
                         print(f"📊 Default analysis: {signal} for {current_symbol}")
                 else:
                     print(f"⚠️ Skipping default {current_symbol} scan - analyzed recently")
@@ -3437,26 +3446,11 @@ def trading_loop():
                             'last_trade_time': None
                         }
                     
-                    bot_status['monitored_pairs'][current_symbol].update({
-                        'last_signal': signal,
-                        'last_price': current_price,
-                        'rsi': float(df['rsi'].iloc[-1]),
-                        'macd': {'trend': df['macd_trend'].iloc[-1]},
-                        'last_update': format_cairo_time(),
-                        'opportunity_score': current_score
-                    })
+                    update_monitored_pair(current_symbol, signal, current_price, df, current_score)
                     
                     # Update main status with best target
                     if i == 0:
-                        bot_status.update({
-                            'current_symbol': current_symbol,
-                            'last_signal': signal,
-                            'last_price': current_price,
-                            'last_update': format_cairo_time(),
-                            'rsi': float(df['rsi'].iloc[-1]),
-                            'macd': {'trend': df['macd_trend'].iloc[-1]},
-                            'opportunity_score': current_score
-                        })
+                        update_bot_status_common(current_symbol, signal, current_price, df, current_score)
                     
                     # Execute trade with enhanced conditions
                     if signal in ["BUY", "SELL"]:
