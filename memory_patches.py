@@ -61,19 +61,27 @@ def optimize_technical_indicators():
                 prices = prices.values
             elif isinstance(prices, list):
                 prices = np.array(prices, dtype=np.float32)  # Use float32
+            elif isinstance(prices, (int, float)):
+                return 50  # Single value case
             
             if len(prices) < period + 1:
                 return 50
             
-            # Use float32 for all calculations
+            # Use float32 for all calculations to save memory
             prices = prices.astype(np.float32)
             deltas = np.diff(prices)
             gains = np.where(deltas > 0, deltas, 0).astype(np.float32)
             losses = np.where(deltas < 0, -deltas, 0).astype(np.float32)
             
-            # Simplified calculation for memory efficiency
-            avg_gain = np.mean(gains[-period:])
-            avg_loss = np.mean(losses[-period:])
+            # Use Wilder's smoothing method for accurate RSI
+            alpha = 1.0 / period
+            avg_gain = np.mean(gains[:period])
+            avg_loss = np.mean(losses[:period])
+            
+            # Apply Wilder's smoothing to remaining data
+            for i in range(period, len(gains)):
+                avg_gain = alpha * gains[i] + (1 - alpha) * avg_gain
+                avg_loss = alpha * losses[i] + (1 - alpha) * avg_loss
             
             if avg_loss == 0:
                 return 100 if avg_gain > 0 else 50
