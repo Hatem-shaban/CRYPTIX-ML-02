@@ -5912,6 +5912,50 @@ def api_rebalance():
             "timestamp": format_cairo_time()
         }), 500
 
+# ML Training Scheduler API Routes
+@app.route('/api/ml-training/status', methods=['GET'])
+def api_ml_training_status():
+    """Get ML training scheduler status"""
+    try:
+        from simple_ml_scheduler import get_training_status
+        
+        status = get_training_status()
+        
+        return jsonify({
+            "success": True,
+            "status": status,
+            "timestamp": format_cairo_time()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": format_cairo_time()
+        }), 500
+
+@app.route('/api/ml-training/force', methods=['POST'])
+def api_force_ml_training():
+    """Force immediate ML training execution"""
+    try:
+        from simple_ml_scheduler import force_training_execution
+        
+        results = force_training_execution()
+        
+        return jsonify({
+            "success": True,
+            "message": "ML training executed",
+            "results": results,
+            "timestamp": format_cairo_time()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "timestamp": format_cairo_time()
+        }), 500
+
 if __name__ == '__main__':
     print("\n🚀 Starting CRYPTIX AI Trading Bot...")
     print("=" * 50)
@@ -5924,6 +5968,16 @@ if __name__ == '__main__':
             if not initialize_client():
                 print("❌ Failed to initialize API client at startup")
                 raise RuntimeError("API client init failed")
+
+        # Initialize automated ML training scheduler
+        try:
+            from simple_ml_scheduler import start_automated_ml_training
+            print("🤖 Starting automated ML training scheduler...")
+            start_automated_ml_training()
+            print("✅ Automated ML training scheduler is running")
+        except Exception as e:
+            print(f"⚠️ Failed to start ML scheduler: {e}")
+            # Don't fail the entire app if ML scheduler fails
 
         # Configure Flask for production by default; override with FLASK_DEBUG=1
         flask_host = os.getenv('FLASK_HOST', '0.0.0.0')
