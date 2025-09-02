@@ -2464,99 +2464,164 @@ def signal_generator(df, symbol="BTCUSDT"):
             except Exception as buy_analysis_error:
                 print(f"   ⚠️ Buy analysis error: {buy_analysis_error}")
         
-        # Advanced ML Intelligence Analysis (if enabled and signal is not HOLD)
+        # Strategy-Specific ML Intelligence Analysis
         if ENHANCED_MODULES_AVAILABLE and signal != "HOLD" and config.ML_ENABLED:
-            print(f"\n🧠 Applying ML Intelligence Analysis...")
-            
-            try:
-                # Comprehensive Market Intelligence Analysis
-                market_intel = market_intelligence.get_market_intelligence_summary(df, {
-                    'action': signal,
-                    'symbol': symbol,
-                    'rsi': rsi,
-                    'macd': macd,
-                    'macd_trend': macd_trend,
-                    'volume_ratio': indicators.get('volume_ratio', 1.0),
-                    'current_price': current_price,
-                    'volatility': volatility
-                })
+            if strategy == 'ML_PURE':
+                print(f"\n🧠 Applying ML_PURE Intelligence Validation...")
                 
-                print(f"   📊 Market Regime: {market_intel['market_regime']['primary_regime']} "
-                      f"(Confidence: {market_intel['market_regime']['confidence']:.2f})")
-                print(f"   🔍 Pattern Confidence: {market_intel['pattern_analysis']['pattern_confidence']:.2f}")
-                print(f"   📈 Signal Success Probability: {market_intel['signal_probability']:.2f}")
-                print(f"   🎯 Intelligence Score: {market_intel['intelligence_score']:.2f}")
-                
-                # Update adaptive thresholds based on market regime
-                if config.ADAPTIVE_THRESHOLDS_ENABLED:
-                    adaptive_thresholds = market_intel['adaptive_thresholds']
-                    print(f"   ⚙️ Adaptive RSI Thresholds: {adaptive_thresholds['rsi_oversold']:.1f}/{adaptive_thresholds['rsi_overbought']:.1f}")
-                    print(f"   ⚙️ Adaptive MACD Threshold: {adaptive_thresholds['macd_threshold']:.4f}")
-                
-                # ML Pattern Recognition & Market Regime Prediction
-                if config.PATTERN_RECOGNITION_ENABLED:
-                    signal_success_probability = ml_predictor.predict_signal_success(
-                        {'action': signal, 'rsi': rsi, 'macd': macd}, indicators
-                    )
-                    print(f"   🤖 ML Signal Success Prediction: {signal_success_probability:.2f}")
-                
-                # Market Regime Prediction
-                if config.REGIME_DETECTION_ENABLED:
-                    regime_prediction = ml_predictor.predict_market_regime(df)
-                    print(f"   🌍 ML Regime Prediction: {regime_prediction['regime']} "
-                          f"(Confidence: {regime_prediction['confidence']:.2f})")
-                
-                # Intelligence-based signal adjustment
-                intelligence_score = market_intel['intelligence_score']
-                signal_probability = market_intel['signal_probability']
-                
-                # Apply ML-based signal validation
-                if intelligence_score < config.INTELLIGENCE_CONFIDENCE_THRESHOLD:
-                    if signal != "HOLD":
-                        print(f"   ⚠️ Low intelligence confidence ({intelligence_score:.2f} < {config.INTELLIGENCE_CONFIDENCE_THRESHOLD}) - Reducing position conviction")
-                        # Don't change signal to HOLD, but flag for reduced position sizing
-                        indicators['ml_confidence_low'] = True
-                
-                # Apply signal probability threshold
-                if signal_probability < 0.4:  # Low success probability
-                    print(f"   ⚠️ Low signal success probability ({signal_probability:.2f}) - Consider HOLD")
-                    if signal_probability < 0.25:  # Very low probability
+                try:
+                    # For ML_PURE, use intelligence as validation rather than override
+                    market_intel = market_intelligence.get_market_intelligence_summary(df, {
+                        'action': signal,
+                        'symbol': symbol,
+                        'rsi': rsi,
+                        'macd': macd,
+                        'macd_trend': macd_trend,
+                        'volume_ratio': indicators.get('volume_ratio', 1.0),
+                        'current_price': current_price,
+                        'volatility': volatility
+                    })
+                    
+                    print(f"   📊 Market Regime: {market_intel['market_regime']['primary_regime']} "
+                          f"(Confidence: {market_intel['market_regime']['confidence']:.2f})")
+                    print(f"   🔍 Pattern Confidence: {market_intel['pattern_analysis']['pattern_confidence']:.2f}")
+                    print(f"   📈 Signal Success Probability: {market_intel['signal_probability']:.2f}")
+                    print(f"   🎯 Intelligence Score: {market_intel['intelligence_score']:.2f}")
+                    
+                    # Update adaptive thresholds based on market regime
+                    if config.ADAPTIVE_THRESHOLDS_ENABLED:
+                        adaptive_thresholds = market_intel['adaptive_thresholds']
+                        print(f"   ⚙️ Adaptive RSI Thresholds: {adaptive_thresholds['rsi_oversold']:.1f}/{adaptive_thresholds['rsi_overbought']:.1f}")
+                        print(f"   ⚙️ Adaptive MACD Threshold: {adaptive_thresholds['macd_threshold']:.4f}")
+                    
+                    # ML Pattern Recognition & Market Regime Prediction
+                    if config.PATTERN_RECOGNITION_ENABLED:
+                        signal_success_probability = ml_predictor.predict_signal_success(
+                            {'action': signal, 'rsi': rsi, 'macd': macd}, indicators
+                        )
+                        print(f"   🤖 ML Signal Success Prediction: {signal_success_probability:.2f}")
+                    
+                    # Market Regime Prediction
+                    if config.REGIME_DETECTION_ENABLED:
+                        regime_prediction = ml_predictor.predict_market_regime(df)
+                        print(f"   🌍 ML Regime Prediction: {regime_prediction['regime']} "
+                              f"(Confidence: {regime_prediction['confidence']:.2f})")
+                    
+                    intelligence_score = market_intel['intelligence_score']
+                    signal_probability = market_intel['signal_probability']
+                    
+                    # For ML_PURE: Only override for extreme risk situations (much more lenient)
+                    if signal_probability < 0.05:  # Only for extremely low probability (0.05 vs 0.25)
+                        print(f"   🚨 EXTREME RISK: Very low success probability ({signal_probability:.2f}) - ML Override for safety")
                         original_signal = signal
                         signal = "HOLD"
-                        reason = f"ML Intelligence: Very low success probability ({signal_probability:.2f}) - Original: {original_signal}"
-                        print(f"   🔄 Signal changed from {original_signal} to HOLD due to low ML probability")
+                        reason = f"ML Safety Override: Extreme risk detected ({signal_probability:.2f}) - Original: {original_signal}"
+                        print(f"   🔄 ML_PURE signal overridden due to extreme risk")
+                    elif signal_probability < 0.15:  # Warning zone but don't override
+                        print(f"   ⚠️ Low success probability ({signal_probability:.2f}) - Proceeding with ML signal but flagged")
+                        indicators['ml_low_probability'] = True
+                        reason = f"ML {reason} - Low prob warning: {signal_probability:.2f}"
+                    else:
+                        print(f"   ✅ ML Intelligence validation passed - Signal maintained")
+                        if signal_probability > 0.6:
+                            reason = f"ML {reason} - High success prob: {signal_probability:.2f}"
+                    
+                except Exception as intel_error:
+                    print(f"   ⚠️ ML Intelligence validation error: {intel_error}")
+                    # Continue with ML signal if intelligence fails
+                    
+            else:
+                # Standard ML Intelligence Analysis for non-ML strategies
+                print(f"\n🧠 Applying ML Intelligence Analysis...")
                 
-                # Store ML intelligence in bot status
+                try:
+                    # Comprehensive Market Intelligence Analysis
+                    market_intel = market_intelligence.get_market_intelligence_summary(df, {
+                        'action': signal,
+                        'symbol': symbol,
+                        'rsi': rsi,
+                        'macd': macd,
+                        'macd_trend': macd_trend,
+                        'volume_ratio': indicators.get('volume_ratio', 1.0),
+                        'current_price': current_price,
+                        'volatility': volatility
+                    })
+                    
+                    print(f"   📊 Market Regime: {market_intel['market_regime']['primary_regime']} "
+                          f"(Confidence: {market_intel['market_regime']['confidence']:.2f})")
+                    print(f"   🔍 Pattern Confidence: {market_intel['pattern_analysis']['pattern_confidence']:.2f}")
+                    print(f"   📈 Signal Success Probability: {market_intel['signal_probability']:.2f}")
+                    print(f"   🎯 Intelligence Score: {market_intel['intelligence_score']:.2f}")
+                    
+                    # Update adaptive thresholds based on market regime
+                    if config.ADAPTIVE_THRESHOLDS_ENABLED:
+                        adaptive_thresholds = market_intel['adaptive_thresholds']
+                        print(f"   ⚙️ Adaptive RSI Thresholds: {adaptive_thresholds['rsi_oversold']:.1f}/{adaptive_thresholds['rsi_overbought']:.1f}")
+                        print(f"   ⚙️ Adaptive MACD Threshold: {adaptive_thresholds['macd_threshold']:.4f}")
+                    
+                    # ML Pattern Recognition & Market Regime Prediction
+                    if config.PATTERN_RECOGNITION_ENABLED:
+                        signal_success_probability = ml_predictor.predict_signal_success(
+                            {'action': signal, 'rsi': rsi, 'macd': macd}, indicators
+                        )
+                        print(f"   🤖 ML Signal Success Prediction: {signal_success_probability:.2f}")
+                    
+                    # Market Regime Prediction
+                    if config.REGIME_DETECTION_ENABLED:
+                        regime_prediction = ml_predictor.predict_market_regime(df)
+                        print(f"   🌍 ML Regime Prediction: {regime_prediction['regime']} "
+                              f"(Confidence: {regime_prediction['confidence']:.2f})")
+                    
+                    intelligence_score = market_intel['intelligence_score']
+                    signal_probability = market_intel['signal_probability']
+                    
+                    # Apply ML-based signal validation (standard thresholds for non-ML strategies)
+                    if intelligence_score < config.INTELLIGENCE_CONFIDENCE_THRESHOLD:
+                        if signal != "HOLD":
+                            print(f"   ⚠️ Low intelligence confidence ({intelligence_score:.2f} < {config.INTELLIGENCE_CONFIDENCE_THRESHOLD}) - Reducing position conviction")
+                            # Don't change signal to HOLD, but flag for reduced position sizing
+                            indicators['ml_confidence_low'] = True
+                    
+                    # Apply signal probability threshold (standard conservative thresholds)
+                    if signal_probability < 0.4:  # Low success probability
+                        print(f"   ⚠️ Low signal success probability ({signal_probability:.2f}) - Consider HOLD")
+                        if signal_probability < 0.25:  # Very low probability
+                            original_signal = signal
+                            signal = "HOLD"
+                            reason = f"ML Intelligence: Very low success probability ({signal_probability:.2f}) - Original: {original_signal}"
+                            print(f"   🔄 Signal changed from {original_signal} to HOLD due to low ML probability")
+                            
+                except Exception as intel_error:
+                    print(f"   ⚠️ ML Intelligence analysis error: {intel_error}")
+                    # Continue with signal if intelligence fails
+            
+            # Store ML intelligence in bot status (for both strategies)
+            if 'market_intel' in locals():
                 bot_status['last_ml_intelligence'] = {
                     'market_regime': market_intel['market_regime']['primary_regime'],
                     'regime_confidence': market_intel['market_regime']['confidence'],
                     'pattern_confidence': market_intel['pattern_analysis']['pattern_confidence'],
-                    'signal_probability': signal_probability,
-                    'intelligence_score': intelligence_score,
+                    'signal_probability': market_intel['signal_probability'],
+                    'intelligence_score': market_intel['intelligence_score'],
                     'adaptive_thresholds': market_intel['adaptive_thresholds'],
                     'market_stress': market_intel['market_stress']['stress_level']
                 }
                 
-                # Update reason with ML insights
+                # Update reason with ML insights (for both strategies)
                 if signal != "HOLD":
                     ml_insights = []
                     if market_intel['market_regime']['confidence'] > 0.8:
                         ml_insights.append(f"Regime: {market_intel['market_regime']['primary_regime']}")
-                    if signal_probability > 0.7:
-                        ml_insights.append(f"High success prob: {signal_probability:.2f}")
-                    if intelligence_score > 0.8:
-                        ml_insights.append(f"High intelligence: {intelligence_score:.2f}")
+                    if market_intel['signal_probability'] > 0.7:
+                        ml_insights.append(f"High success prob: {market_intel['signal_probability']:.2f}")
+                    if market_intel['intelligence_score'] > 0.8:
+                        ml_insights.append(f"High intelligence: {market_intel['intelligence_score']:.2f}")
                     
                     if ml_insights:
                         reason += f" | ML: {', '.join(ml_insights)}"
                 
                 print(f"   ✅ ML Intelligence analysis completed")
-                
-            except Exception as ml_error:
-                print(f"   ⚠️ ML Intelligence error: {ml_error}")
-                # Continue with signal if ML analysis fails
-                pass
-                
+        
         # Update bot status with latest signal and timestamp
         current_time = format_cairo_time()
         update_bot_status_common(symbol, signal, current_price, df)
