@@ -759,24 +759,24 @@ class MLTradingStrategy:
                            indicators: Dict) -> float:
         """Calculate composite buy score"""
         try:
-            # Base score from ML prediction
-            base_score = buy_prob * 100
+            # Base score from ML prediction (scale to 0-80 instead of 0-100)
+            base_score = buy_prob * 80
             
-            # ML confidence multiplier
-            confidence_multiplier = 0.5 + (ml_confidence * 1.5)  # 0.5x to 2.0x
+            # ML confidence multiplier (reduced range)
+            confidence_multiplier = 0.7 + (ml_confidence * 0.8)  # 0.7x to 1.5x
             
-            # Timing bonus
-            timing_bonus = (timing_score - 50) * 0.3  # -15 to +15 points
+            # Timing bonus (reduced)
+            timing_bonus = (timing_score - 50) * 0.2  # -10 to +10 points
             
-            # Buy low opportunity bonus
-            buy_low_bonus = price_position.get('buy_low_score', 0) * 0.5  # Up to +50 points
+            # Buy low opportunity bonus (reduced)
+            buy_low_bonus = price_position.get('buy_low_score', 0) * 0.3  # Up to +30 points
             
-            # Market opportunity factor
-            market_factor = market_opportunity / 50  # 0.5x to 2.0x multiplier
+            # Market opportunity factor (reduced range)
+            market_factor = 0.8 + (market_opportunity / 100)  # 0.8x to 1.8x multiplier
             
-            # RSI oversold bonus
+            # RSI oversold bonus (reduced)
             rsi = indicators.get('rsi', 50)
-            rsi_bonus = max(0, (35 - rsi) * 0.8) if rsi < 35 else 0  # Bonus for oversold
+            rsi_bonus = max(0, (35 - rsi) * 0.5) if rsi < 35 else 0  # Bonus for oversold
             
             # Calculate final score
             buy_score = (base_score * confidence_multiplier * market_factor + 
@@ -792,24 +792,24 @@ class MLTradingStrategy:
                             indicators: Dict) -> float:
         """Calculate composite sell score"""
         try:
-            # Base score from ML prediction
-            base_score = sell_prob * 100
+            # Base score from ML prediction (scale to 0-80 instead of 0-100)
+            base_score = sell_prob * 80
             
-            # ML confidence multiplier
-            confidence_multiplier = 0.5 + (ml_confidence * 1.5)  # 0.5x to 2.0x
+            # ML confidence multiplier (reduced range)
+            confidence_multiplier = 0.7 + (ml_confidence * 0.8)  # 0.7x to 1.5x
             
-            # Timing bonus
-            timing_bonus = (timing_score - 50) * 0.3  # -15 to +15 points
+            # Timing bonus (reduced)
+            timing_bonus = (timing_score - 50) * 0.2  # -10 to +10 points
             
-            # Sell high opportunity bonus
-            sell_high_bonus = price_position.get('sell_high_score', 0) * 0.5  # Up to +50 points
+            # Sell high opportunity bonus (reduced)
+            sell_high_bonus = price_position.get('sell_high_score', 0) * 0.3  # Up to +30 points
             
-            # Market opportunity factor
-            market_factor = market_opportunity / 50  # 0.5x to 2.0x multiplier
+            # Market opportunity factor (reduced range)
+            market_factor = 0.8 + (market_opportunity / 100)  # 0.8x to 1.8x multiplier
             
-            # RSI overbought bonus
+            # RSI overbought bonus (reduced)
             rsi = indicators.get('rsi', 50)
-            rsi_bonus = max(0, (rsi - 65) * 0.8) if rsi > 65 else 0  # Bonus for overbought
+            rsi_bonus = max(0, (rsi - 65) * 0.5) if rsi > 65 else 0  # Bonus for overbought
             
             # Calculate final score
             sell_score = (base_score * confidence_multiplier * market_factor + 

@@ -379,14 +379,17 @@ class EnhancedMLPredictor:
     def predict_signal_success(self, signal_data, current_indicators):
         """Predict success probability of a trading signal with robust error handling"""
         if not SKLEARN_AVAILABLE or self.pattern_model is None or self.pattern_scaler is None:
-            return 0.5  # Default neutral probability
+            return self._fallback_signal_prediction(current_indicators, signal_data.get('action', 'BUY'))
             
         try:
+            # Extract signal action
+            action = signal_data.get('action', 'BUY')
+            
             # Create feature vector from current indicators with standardized features
-            features = self._create_pattern_vector_robust(current_indicators)
+            features = self._create_pattern_vector_robust(current_indicators, action)
             
             if features is None:
-                return 0.5
+                return self._fallback_signal_prediction(current_indicators, action)
                 
             # Handle feature dimension mismatch gracefully
             try:
@@ -396,21 +399,28 @@ class EnhancedMLPredictor:
                 # Predict success probability
                 success_proba = self.pattern_model.predict_proba(X_scaled)[0]
                 
-                # Return probability of success (class 1)
-                return success_proba[1] if len(success_proba) > 1 else 0.5
+                # Get base probability (class 1)
+                base_probability = success_proba[1] if len(success_proba) > 1 else 0.5
+                
+                # Apply action-specific adjustments to differentiate BUY vs SELL
+                adjusted_probability = self._adjust_probability_for_action(
+                    base_probability, action, current_indicators
+                )
+                
+                return adjusted_probability
                 
             except ValueError as ve:
                 if "features" in str(ve).lower():
                     # Feature mismatch - use fallback prediction
-                    return self._fallback_signal_prediction(current_indicators)
+                    return self._fallback_signal_prediction(current_indicators, action)
                 else:
                     raise ve
             
         except Exception as e:
             print(f"Error predicting signal success: {e}")
-            return self._fallback_signal_prediction(current_indicators)
+            return self._fallback_signal_prediction(current_indicators, signal_data.get('action', 'BUY'))
 
-    def _create_pattern_vector_robust(self, indicators):
+    def _create_pattern_vector_robust(self, indicators, action='BUY'):
         """Create robust feature vector that handles missing indicators gracefully"""
         try:
             # Core features that are always available
@@ -421,9 +431,13 @@ class EnhancedMLPredictor:
                 indicators.get('volume_ratio', 1.0)
             ]
             
+            # Add action-specific feature (1 for BUY, 0 for SELL)
+            action_feature = 1.0 if action == 'BUY' else 0.0
+            features.append(action_feature)
+            
             # Try to match the expected feature count of the trained model
             # This handles the case where models were trained with different feature sets
-            expected_features = getattr(self.pattern_scaler, 'n_features_in_', 4)
+            expected_features = getattr(self.pattern_scaler, 'n_features_in_', 5)
             
             if expected_features > len(features):
                 # Add additional features to match expected count
@@ -451,22 +465,70 @@ class EnhancedMLPredictor:
         except Exception:
             return None
 
-    def _fallback_signal_prediction(self, indicators):
-        """Fallback signal prediction when ML models fail"""
+    def _adjust_probability_for_action(self, base_probability, action, indicators):
+        """Adjust probability based on action and market conditions"""
         try:
-            # Simple rule-based prediction
             rsi = indicators.get('rsi', 50)
             macd = indicators.get('macd', 0)
             
-            # Basic signal success probability based on RSI and MACD
-            if rsi < 30 and macd > 0:  # Oversold with bullish MACD
-                return 0.7
-            elif rsi > 70 and macd < 0:  # Overbought with bearish MACD
-                return 0.7
-            elif 40 < rsi < 60:  # Neutral RSI
-                return 0.5
-            else:
-                return 0.4  # Less favorable conditions
+            if action == 'BUY':
+                # For BUY signals, increase probability when oversold
+                if rsi < 30:
+                    base_probability *= 1.2  # Boost for oversold conditions
+                elif rsi > 70:
+                    base_probability *= 0.8  # Reduce for overbought conditions
+                    
+                # Boost for bullish MACD
+                if macd > 0:
+                    base_probability *= 1.1
+                    
+            elif action == 'SELL':
+                # For SELL signals, increase probability when overbought
+                if rsi > 70:
+                    base_probability *= 1.2  # Boost for overbought conditions
+                elif rsi < 30:
+                    base_probability *= 0.8  # Reduce for oversold conditions
+                    
+                # Boost for bearish MACD
+                if macd < 0:
+                    base_probability *= 1.1
+            
+            # Ensure probability stays within bounds
+            return max(0.1, min(0.9, base_probability))
+            
+        except Exception:
+            return base_probability
+
+    def _fallback_signal_prediction(self, indicators, action='BUY'):
+        """Fallback signal prediction when ML models fail"""
+        try:
+            # Simple rule-based prediction that considers action
+            rsi = indicators.get('rsi', 50)
+            macd = indicators.get('macd', 0)
+            
+            if action == 'BUY':
+                # BUY signal success probability
+                if rsi < 30 and macd > 0:  # Oversold with bullish MACD
+                    return 0.75
+                elif rsi < 40 and macd > 0:  # Slightly oversold with bullish MACD
+                    return 0.65
+                elif 40 < rsi < 60:  # Neutral RSI
+                    return 0.5
+                else:
+                    return 0.35  # Less favorable conditions for buying
+                    
+            elif action == 'SELL':
+                # SELL signal success probability
+                if rsi > 70 and macd < 0:  # Overbought with bearish MACD
+                    return 0.75
+                elif rsi > 60 and macd < 0:  # Slightly overbought with bearish MACD
+                    return 0.65
+                elif 40 < rsi < 60:  # Neutral RSI
+                    return 0.5
+                else:
+                    return 0.35  # Less favorable conditions for selling
+            
+            return 0.5  # Default neutral
                 
         except Exception:
             return 0.5
