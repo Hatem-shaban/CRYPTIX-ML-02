@@ -1,7 +1,7 @@
 # Render Configuration for CRYPTIX-ML Bot
 
 # Build Command
-build = "pip install -r requirements-render.txt"
+build = "pip install -r requirements-render-safe.txt"
 
 # Start Command  
 start = "python render_launcher.py"

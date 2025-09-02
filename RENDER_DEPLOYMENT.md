@@ -64,9 +64,19 @@ DEFAULT_STRATEGY=ML_PURE
 
 ### 3. Build Command for Render
 
+**Use this safer build command that avoids Python 3.13 compatibility issues:**
+
+```bash
+pip install -r requirements-render-safe.txt
+```
+
+**Or if you want to try the full requirements:**
+
 ```bash
 pip install -r requirements-render.txt
 ```
+
+**Note:** If you get pandas compilation errors, use `requirements-render-safe.txt` which excludes problematic dependencies and uses only pure Python packages.
 
 ### 4. Start Command for Render
 
@@ -107,6 +117,38 @@ The optimized version includes:
 - **Same trading pairs** and strategies
 
 ## 🛠️ Troubleshooting
+
+### Build Errors
+
+#### Pandas Compilation Error (Python 3.13 compatibility)
+
+**Error:** 
+```
+error: subprocess-exited-with-error
+× Preparing metadata (pyproject.toml) did not run successfully.
+pandas/_libs/tslibs/base.pyx.c: error: too few arguments to function '_PyLong_AsByteArray'
+```
+
+**Solution:**
+1. Use the safer requirements file:
+   ```bash
+   pip install -r requirements-render-safe.txt
+   ```
+
+2. Or specify Python 3.11 in your Render environment:
+   - Go to your Render dashboard
+   - Set environment variable: `PYTHON_VERSION=3.11`
+   - Redeploy
+
+#### TA-Lib Compilation Error
+
+**Error:**
+```
+Failed building wheel for TA-Lib
+```
+
+**Solution:**
+The bot includes compatibility patches that provide custom implementations of technical indicators if TA-Lib is not available. The trading functionality will work identically.
 
 ### If Memory Still Exceeds 512MB:
 

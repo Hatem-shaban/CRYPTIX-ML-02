@@ -27,6 +27,11 @@ def apply_render_optimizations():
         os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
         os.environ['PYTHONUNBUFFERED'] = '1'
         
+        # Apply compatibility patches first
+        from render_compatibility import apply_render_compatibility
+        if apply_render_compatibility():
+            logger.info("✅ Render compatibility patches applied")
+        
         # Import and apply memory optimizations
         from render_memory_optimizer import optimize_render_deployment, patch_fetch_data_for_memory
         from memory_optimizer import get_memory_optimizer, log_memory_usage
