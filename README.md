@@ -85,6 +85,7 @@ For detailed configuration instructions, see [ENVIRONMENT_SETUP.md](ENVIRONMENT_
 ```
 CRYPTIX-ML/
 ├── config.py              # Main configuration
+├── model_paths.py         # Centralized ML model path management
 ├── web_bot.py             # Main trading bot
 ├── ml_predictor.py        # Enhanced ML prediction engine
 ├── market_intelligence.py # Market analysis and regime detection
@@ -94,6 +95,10 @@ CRYPTIX-ML/
 ├── telegram_notify.py     # Telegram notifications
 ├── .env.example          # Environment template
 ├── requirements.txt      # Python dependencies
+├── models/               # Trained ML models, scalers, and selectors
+│   ├── README.md         # Model directory documentation
+│   ├── *.pkl             # Trained ML models and components
+│   └── ...
 ├── logs/                 # Trading logs and history
 └── docs/                 # Documentation
 ```
