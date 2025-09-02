@@ -44,6 +44,52 @@ class EnhancedHistoricalDataFetcher:
         # Ensure logs directory exists
         os.makedirs('logs', exist_ok=True)
     
+    def fetch_incremental_data(self, symbol: str, timeframe: str, 
+                              existing_df: pd.DataFrame = None, 
+                              max_days_gap: int = 7) -> pd.DataFrame:
+        """
+        Fetch only incremental data since last update
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe 
+            existing_df: Existing DataFrame to append to
+            max_days_gap: Maximum days to fetch incrementally (fallback to full if more)
+            
+        Returns:
+            Updated DataFrame with new data
+        """
+        try:
+            if existing_df is None or existing_df.empty:
+                # No existing data, fetch limited recent data
+                return self.fetch_historical_ohlcv(symbol, timeframe, days_back=90)
+            
+            # Get the latest timestamp from existing data
+            last_timestamp = pd.to_datetime(existing_df['timestamp']).max()
+            days_since_last = (datetime.now() - last_timestamp).days
+            
+            if days_since_last <= max_days_gap:
+                # Fetch only incremental data
+                logger.info(f"Fetching {days_since_last} days of incremental data for {symbol}")
+                new_data = self.fetch_historical_ohlcv(symbol, timeframe, days_back=days_since_last + 1)
+                
+                # Merge and deduplicate
+                if not new_data.empty:
+                    combined = pd.concat([existing_df, new_data], ignore_index=True)
+                    combined = combined.drop_duplicates(subset=['timestamp'], keep='last')
+                    combined = combined.sort_values('timestamp').reset_index(drop=True)
+                    return combined
+                else:
+                    return existing_df
+            else:
+                # Gap too large, fetch fresh data
+                logger.info(f"Gap of {days_since_last} days too large, fetching fresh 90-day data")
+                return self.fetch_historical_ohlcv(symbol, timeframe, days_back=90)
+                
+        except Exception as e:
+            logger.error(f"Error in incremental fetch: {e}")
+            return existing_df if existing_df is not None else pd.DataFrame()
+
     def fetch_historical_ohlcv(self, symbol: str, timeframe: str, 
                              days_back: int = 365) -> pd.DataFrame:
         """
@@ -224,11 +270,14 @@ class EnhancedHistoricalDataFetcher:
             logger.error(f"Error calculating indicators: {e}")
             return df
     
-    def fetch_comprehensive_data(self, days_back: int = 365) -> pd.DataFrame:
+    def fetch_comprehensive_data(self, days_back: int = 90, use_incremental: bool = True) -> pd.DataFrame:
         """
         Fetch comprehensive historical data for all symbols and timeframes
+        with smart incremental loading
         
         Args:
+            days_back: Number of days to fetch (reduced default)
+            use_incremental: Use incremental loading when possible
             days_back: Number of days to fetch
             
         Returns:

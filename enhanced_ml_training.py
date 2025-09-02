@@ -94,29 +94,37 @@ class EnhancedMLTrainer:
         # Ensure logs directory exists
         os.makedirs('logs', exist_ok=True)
     
-    def fetch_fresh_training_data(self, days_back: int = 365, force_refresh: bool = False) -> pd.DataFrame:
+    def fetch_fresh_training_data(self, days_back: int = 90, force_refresh: bool = False, 
+                                incremental: bool = True) -> pd.DataFrame:
         """
-        Fetch fresh training data from Binance or load existing comprehensive data
+        Fetch training data with smart incremental loading
         
         Args:
-            days_back: Number of days of historical data to fetch
-            force_refresh: Force refresh of data even if recent file exists
+            days_back: Number of days of historical data to fetch (reduced default)
+            force_refresh: Force fresh download
+            incremental: Use incremental loading for efficiency
             
         Returns:
-            DataFrame with comprehensive training data
+            DataFrame with training data
         """
         # Check for existing recent data
         data_files = [f for f in os.listdir('logs') if f.startswith('ml_training_data_') and f.endswith('.csv')]
         
         if not force_refresh and data_files:
-            # Use most recent file if it's less than 24 hours old
+            # Use most recent file if it's less than 4 hours old (more frequent updates)
             latest_file = max(data_files)
             file_path = os.path.join('logs', latest_file)
             file_time = os.path.getmtime(file_path)
             
-            if (datetime.now().timestamp() - file_time) < 24 * 3600:  # Less than 24 hours
-                logger.info(f"📥 Using existing training data: {latest_file}")
+            if (datetime.now().timestamp() - file_time) < 4 * 3600:  # Less than 4 hours
+                logger.info(f"📥 Using recent training data: {latest_file}")
                 return pd.read_csv(file_path)
+            
+            # For incremental mode, try to update existing data
+            elif incremental:
+                logger.info(f"🔄 Attempting incremental update from: {latest_file}")
+                existing_df = pd.read_csv(file_path)
+                return self._fetch_incremental_update(existing_df, days_back)
         
         # Fetch fresh data
         if ENHANCED_DATA_AVAILABLE:
@@ -137,6 +145,55 @@ class EnhancedMLTrainer:
         else:
             logger.warning("⚠️ Enhanced data fetcher not available, using fallback")
             return self.load_fallback_data()
+
+    def _fetch_incremental_update(self, existing_df: pd.DataFrame, days_back: int) -> pd.DataFrame:
+        """Fetch incremental updates to existing training data"""
+        try:
+            if ENHANCED_DATA_AVAILABLE:
+                fetcher = EnhancedHistoricalDataFetcher()
+                
+                # Use incremental fetch for each symbol/timeframe combination
+                updated_data = []
+                symbols_processed = set()
+                
+                for _, row in existing_df.groupby(['symbol', 'timeframe']).first().iterrows():
+                    symbol = row['symbol']
+                    timeframe = row['timeframe']
+                    
+                    if f"{symbol}_{timeframe}" not in symbols_processed:
+                        # Get existing data for this symbol/timeframe
+                        existing_subset = existing_df[
+                            (existing_df['symbol'] == symbol) & 
+                            (existing_df['timeframe'] == timeframe)
+                        ].copy()
+                        
+                        # Fetch incremental data
+                        updated_subset = fetcher.fetch_incremental_data(
+                            symbol, timeframe, existing_subset
+                        )
+                        
+                        if not updated_subset.empty:
+                            updated_data.append(updated_subset)
+                        
+                        symbols_processed.add(f"{symbol}_{timeframe}")
+                
+                if updated_data:
+                    combined_df = pd.concat(updated_data, ignore_index=True)
+                    
+                    # Save incremental update
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"logs/ml_training_data_incremental_{timestamp}.csv"
+                    fetcher.save_training_data(combined_df, filename)
+                    logger.info(f"✅ Incremental training data saved: {filename}")
+                    return combined_df
+                
+            # Fallback to existing data if incremental fails
+            logger.warning("⚠️ Incremental update failed, using existing data")
+            return existing_df
+            
+        except Exception as e:
+            logger.error(f"Error in incremental update: {e}")
+            return existing_df
     
     def load_fallback_data(self) -> pd.DataFrame:
         """Load fallback data from existing CSV files"""
@@ -530,24 +587,26 @@ class EnhancedMLTrainer:
             logger.error(f"Error training regime model: {e}")
             return {'success': False, 'error': str(e)}
     
-    def train_all_models(self, days_back: int = 365, force_refresh: bool = False) -> Dict:
+    def train_all_models(self, days_back: int = 90, force_refresh: bool = False, 
+                        incremental: bool = True) -> Dict:
         """
-        Train all ML models with comprehensive historical data
+        Train all ML models with smart incremental data loading
         
         Args:
-            days_back: Days of historical data to use
-            force_refresh: Force refresh of training data
+            days_back: Days of historical data to use (reduced default)
+            force_refresh: Force fresh data download
+            incremental: Use incremental loading for efficiency
             
         Returns:
             Training results summary
         """
-        logger.info("🚀 Starting comprehensive ML model training...")
+        logger.info("🚀 Starting enhanced ML model training...")
         
         if not SKLEARN_AVAILABLE:
             return {'success': False, 'error': 'Scikit-learn not available'}
         
-        # Fetch training data
-        df = self.fetch_fresh_training_data(days_back, force_refresh)
+        # Fetch training data with incremental loading
+        df = self.fetch_fresh_training_data(days_back, force_refresh, incremental)
         
         if df.empty:
             return {'success': False, 'error': 'No training data available'}
@@ -622,8 +681,8 @@ def main():
     
     trainer = EnhancedMLTrainer()
     
-    # Train all models with fresh data
-    results = trainer.train_all_models(days_back=365, force_refresh=True)
+    # Train all models with incremental approach
+    results = trainer.train_all_models(days_back=90, force_refresh=False, incremental=True)
     
     if results['success']:
         logger.info(f"\n✅ Training completed successfully!")
