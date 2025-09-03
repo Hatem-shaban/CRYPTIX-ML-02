@@ -64,19 +64,13 @@ DEFAULT_STRATEGY=ML_PURE
 
 ### 3. Build Command for Render
 
-**Use this safer build command that avoids Python 3.13 compatibility issues:**
+**Use the original requirements file:**
 
 ```bash
-pip install -r requirements-render-safe.txt
+pip install -r requirements.txt
 ```
 
-**Or if you want to try the full requirements:**
-
-```bash
-pip install -r requirements-render.txt
-```
-
-**Note:** If you get pandas compilation errors, use `requirements-render-safe.txt` which excludes problematic dependencies and uses only pure Python packages.
+**Note:** We reverted to the original requirements.txt since pandas compilation issues persist with Python 3.13 on Render. All memory optimizations are implemented in the code itself, not through dependency changes.
 
 ### 4. Start Command for Render
 
