@@ -1035,6 +1035,87 @@ def get_exchange_info_cached(ttl_seconds: int = 300):
         log_error_to_csv(f"exchange_info cache error: {e}", "CACHE_ERROR", "get_exchange_info_cached", "WARNING")
         return client.get_exchange_info()
 
+def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None):
+    """
+    Calculate the smart minimum USDT required for a trade based on:
+    1. Binance LOT_SIZE filter (minimum quantity)
+    2. Binance MIN_NOTIONAL filter (minimum value)
+    3. Current market price
+    4. Safety margin
+    
+    Returns the actual minimum USDT needed to place a trade for this symbol
+    """
+    try:
+        if not client:
+            return config.MIN_TRADE_USDT  # Fallback to config default
+            
+        # Get current price if not provided
+        if current_price is None:
+            try:
+                ticker = client.get_ticker(symbol=symbol)
+                current_price = float(ticker['lastPrice'])
+            except Exception as e:
+                log_error_to_csv(f"Error getting price for {symbol}: {e}", "PRICE_ERROR", "calculate_smart_minimum_trade_usdt", "WARNING")
+                return config.MIN_TRADE_USDT
+        
+        # Get exchange info for symbol filters
+        try:
+            exchange_info = get_exchange_info_cached()
+            symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
+            
+            if not symbol_info:
+                print(f"⚠️ Symbol {symbol} not found in exchange info, using config default")
+                return config.MIN_TRADE_USDT
+                
+        except Exception as e:
+            log_error_to_csv(f"Error getting exchange info for {symbol}: {e}", "EXCHANGE_INFO_ERROR", "calculate_smart_minimum_trade_usdt", "WARNING")
+            return config.MIN_TRADE_USDT
+        
+        # Extract relevant filters
+        min_qty = 0.001  # Default minimum quantity
+        min_notional = 10.0  # Default minimum notional value (Binance standard)
+        step_size = 0.001  # Default step size
+        
+        for filter_info in symbol_info['filters']:
+            if filter_info['filterType'] == 'LOT_SIZE':
+                min_qty = float(filter_info['minQty'])
+                step_size = float(filter_info['stepSize'])
+            elif filter_info['filterType'] == 'MIN_NOTIONAL':
+                min_notional = float(filter_info['minNotional'])
+                
+        # Calculate minimum USDT needed based on different constraints
+        
+        # 1. Minimum quantity requirement
+        min_usdt_from_qty = min_qty * current_price
+        
+        # 2. Minimum notional requirement (this is usually the binding constraint)
+        min_usdt_from_notional = min_notional
+        
+        # 3. Take the maximum of both requirements
+        calculated_minimum = max(min_usdt_from_qty, min_usdt_from_notional)
+        
+        # 4. Add a small safety margin (5%) to avoid rounding issues
+        safety_margin = 1.05
+        smart_minimum = calculated_minimum * safety_margin
+        
+        # 5. Ensure we don't go below the config minimum (fallback protection)
+        final_minimum = max(smart_minimum, config.MIN_TRADE_USDT)
+        
+        print(f"💡 Smart minimum calculation for {symbol}:")
+        print(f"   Current price: ${current_price:.4f}")
+        print(f"   Min quantity: {min_qty} (worth ${min_usdt_from_qty:.2f})")
+        print(f"   Min notional: ${min_notional:.2f}")
+        print(f"   Smart minimum: ${smart_minimum:.2f} (with safety margin)")
+        print(f"   Final minimum: ${final_minimum:.2f}")
+        
+        return round(final_minimum, 2)
+        
+    except Exception as e:
+        error_msg = f"Error calculating smart minimum for {symbol}: {e}"
+        log_error_to_csv(error_msg, "SMART_MINIMUM_ERROR", "calculate_smart_minimum_trade_usdt", "ERROR")
+        print(f"❌ {error_msg}")
+        return config.MIN_TRADE_USDT  # Safe fallback
+
 def calculate_rsi(prices, period=None):
     """Calculate RSI using proper Wilder's smoothing method"""
     period = period or config.RSI_PERIOD
@@ -1969,13 +2050,14 @@ def get_account_balances_summary():
         log_error_to_csv(error_msg, "BALANCE_SUMMARY_ERROR", "get_account_balances_summary", "ERROR")
         return {"error": error_msg}
 
-def check_usdt_balance():
+def check_usdt_balance(symbol="BTCUSDT"):
     """Check if we have sufficient USDT balance to place a BUY order"""
     try:
         # Cache to reduce repeated API calls within a short window
         if 'usdt_balance_cache' not in bot_status:
             bot_status['usdt_balance_cache'] = {}
-        cache_entry = bot_status['usdt_balance_cache'].get('USDT')
+        cache_key = f"{symbol}_USDT_CHECK"
+        cache_entry = bot_status['usdt_balance_cache'].get(cache_key)
         now = get_cairo_time()
         if cache_entry and (now - cache_entry['time']).total_seconds() < 180:  # 3 minute cache
             return cache_entry['has'], cache_entry['amount'], cache_entry['msg']
@@ -1996,17 +2078,18 @@ def check_usdt_balance():
         if usdt_balance is None:
             result = (False, 0, "USDT balance not found in account")
         else:
-            min_required = 10.0  # Minimum 10 USDT required for trades
+            # Use smart minimum calculation instead of hardcoded 10 USDT
+            min_required = calculate_smart_minimum_trade_usdt(symbol)
             has_sufficient = usdt_balance >= min_required
             
             result = (
-                (True, usdt_balance, f"Sufficient USDT: {usdt_balance:.2f}")
+                (True, usdt_balance, f"Sufficient USDT: {usdt_balance:.2f} (min: {min_required:.2f})")
                 if has_sufficient
                 else (False, usdt_balance, f"Insufficient USDT: {usdt_balance:.2f} < {min_required:.2f}")
             )
             
         # Save to cache
-        bot_status['usdt_balance_cache']['USDT'] = {
+        bot_status['usdt_balance_cache'][cache_key] = {
             'has': result[0], 'amount': result[1], 'msg': result[2], 'time': now
         }
         return result
@@ -2489,7 +2572,7 @@ def signal_generator(df, symbol="BTCUSDT"):
             
             # First, check if we have sufficient USDT balance
             try:
-                has_usdt, usdt_amount, usdt_msg = check_usdt_balance()
+                has_usdt, usdt_amount, usdt_msg = check_usdt_balance(symbol)
                 
                 if not has_usdt:
                     print(f"   ❌ Cannot execute BUY - {usdt_msg}")
@@ -2971,11 +3054,11 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
                 print(f"Minimum allowed quantity: {min_qty}")
                 
-                # Ensure minimum trade value (Binance requires ~$10 minimum)
-                min_trade_value = 10.0  # $10 minimum trade value
-                if qty * current_price < min_trade_value:
-                    qty = min_trade_value / current_price
-                    print(f"Adjusted quantity for minimum trade value ($10): {qty}")
+                # Use smart minimum trade value calculation
+                smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price)
+                if qty * current_price < smart_min_trade_value:
+                    qty = smart_min_trade_value / current_price
+                    print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
                 
                 qty = max(min_qty, qty)
                 print(f"Quantity after minimum check: {qty}")
@@ -3034,16 +3117,20 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 return "USDT balance not found"
 
             usdt = float(usdt_balance['free'])
+            
+            # Calculate smart minimum required for this symbol
+            smart_minimum = calculate_smart_minimum_trade_usdt(symbol)
+            
             print(f"USDT available for buy: {usdt}")
-            print(f"Minimum required: 10 USDT")
+            print(f"Smart minimum required: {smart_minimum} USDT")
             print(f"Risk amount would be: {usdt * (config.RISK_PERCENTAGE / 100):.2f} USDT")
 
-            if usdt < 10:
-                print("❌ Insufficient USDT balance (minimum 10 USDT required)")
+            if usdt < smart_minimum:
+                print(f"❌ Insufficient USDT balance (minimum {smart_minimum} USDT required)")
                 trade_info['status'] = 'insufficient_funds'
                 bot_status['trading_summary']['failed_trades'] += 1
-                log_error_to_csv(f"Insufficient USDT for buy: {usdt} < 10", "BALANCE_ERROR", "execute_trade", "WARNING")
-                return f"Insufficient USDT: {usdt:.2f} < 10.00"
+                log_error_to_csv(f"Insufficient USDT for buy: {usdt} < {smart_minimum}", "BALANCE_ERROR", "execute_trade", "WARNING")
+                return f"Insufficient USDT: {usdt:.2f} < {smart_minimum:.2f}"
 
             order = client.order_market_buy(symbol=symbol, quantity=qty)
             trade_info['price'] = float(order['fills'][0]['price']) if order['fills'] else 0
