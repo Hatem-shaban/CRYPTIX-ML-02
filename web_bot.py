@@ -1035,13 +1035,13 @@ def get_exchange_info_cached(ttl_seconds: int = 300):
         log_error_to_csv(f"exchange_info cache error: {e}", "CACHE_ERROR", "get_exchange_info_cached", "WARNING")
         return client.get_exchange_info()
 
-def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None):
+def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None, available_usdt=None):
     """
     Calculate the smart minimum USDT required for a trade based on:
     1. Binance LOT_SIZE filter (minimum quantity)
     2. Binance MIN_NOTIONAL filter (minimum value)
     3. Current market price
-    4. Safety margin
+    4. Adaptive safety margin based on available balance
     
     Returns the actual minimum USDT needed to place a trade for this symbol
     """
@@ -1094,9 +1094,31 @@ def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None):
         # 3. Take the maximum of both requirements
         calculated_minimum = max(min_usdt_from_qty, min_usdt_from_notional)
         
-        # 4. Add a small safety margin (5%) to avoid rounding issues
-        safety_margin = 1.05
-        smart_minimum = calculated_minimum * safety_margin
+        # 4. Adaptive safety margin based on available balance and situation
+        if available_usdt is not None:
+            # If user has exactly or very close to the minimum, use minimal margin
+            balance_buffer = available_usdt - calculated_minimum
+            
+            if balance_buffer <= 0:
+                # User doesn't have enough for even the base minimum
+                smart_minimum = calculated_minimum
+                safety_margin_used = 1.0
+            elif balance_buffer < 1.0:
+                # User has very close to minimum, use tiny margin (0.5%)
+                safety_margin_used = 1.005
+                smart_minimum = calculated_minimum * safety_margin_used
+            elif balance_buffer < 5.0:
+                # User has some buffer, use small margin (1%)
+                safety_margin_used = 1.01
+                smart_minimum = calculated_minimum * safety_margin_used
+            else:
+                # User has good buffer, use normal margin (2%)
+                safety_margin_used = 1.02
+                smart_minimum = calculated_minimum * safety_margin_used
+        else:
+            # No balance info provided, use conservative margin
+            safety_margin_used = 1.02
+            smart_minimum = calculated_minimum * safety_margin_used
         
         # 5. Ensure we don't go below the config minimum (fallback protection)
         final_minimum = max(smart_minimum, config.MIN_TRADE_USDT)
@@ -1105,7 +1127,12 @@ def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None):
         print(f"   Current price: ${current_price:.4f}")
         print(f"   Min quantity: {min_qty} (worth ${min_usdt_from_qty:.2f})")
         print(f"   Min notional: ${min_notional:.2f}")
-        print(f"   Smart minimum: ${smart_minimum:.2f} (with safety margin)")
+        print(f"   Calculated minimum: ${calculated_minimum:.2f}")
+        if available_usdt is not None:
+            print(f"   Available USDT: ${available_usdt:.2f}")
+            print(f"   Balance buffer: ${available_usdt - calculated_minimum:.2f}")
+            print(f"   Adaptive margin: {safety_margin_used:.1%}")
+        print(f"   Smart minimum: ${smart_minimum:.2f}")
         print(f"   Final minimum: ${final_minimum:.2f}")
         
         return round(final_minimum, 2)
@@ -2078,8 +2105,8 @@ def check_usdt_balance(symbol="BTCUSDT"):
         if usdt_balance is None:
             result = (False, 0, "USDT balance not found in account")
         else:
-            # Use smart minimum calculation instead of hardcoded 10 USDT
-            min_required = calculate_smart_minimum_trade_usdt(symbol)
+            # Use smart minimum calculation with available balance for adaptive margin
+            min_required = calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance)
             has_sufficient = usdt_balance >= min_required
             
             result = (
@@ -3054,8 +3081,8 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
                 print(f"Minimum allowed quantity: {min_qty}")
                 
-                # Use smart minimum trade value calculation
-                smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price)
+                # Use smart minimum trade value calculation with adaptive margin
+                smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
                 if qty * current_price < smart_min_trade_value:
                     qty = smart_min_trade_value / current_price
                     print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
@@ -3118,8 +3145,8 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
 
             usdt = float(usdt_balance['free'])
             
-            # Calculate smart minimum required for this symbol
-            smart_minimum = calculate_smart_minimum_trade_usdt(symbol)
+            # Calculate smart minimum required for this symbol with adaptive margin
+            smart_minimum = calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt)
             
             print(f"USDT available for buy: {usdt}")
             print(f"Smart minimum required: {smart_minimum} USDT")
