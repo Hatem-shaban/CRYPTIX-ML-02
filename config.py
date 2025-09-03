@@ -21,7 +21,7 @@ USE_TESTNET = os.getenv('USE_TESTNET', 'false').lower() in ('true', '1', 'yes')
 
 # Risk Management Settings (can be overridden by environment variables)
 RISK_PERCENTAGE = float(os.getenv('RISK_PERCENTAGE', '2.0'))  # Percentage of total balance to risk per trade
-MIN_TRADE_USDT = float(os.getenv('MIN_TRADE_USDT', '10.0'))  # Minimum trade size in USDT
+MIN_TRADE_USDT = float(os.getenv('MIN_TRADE_USDT', '5.0'))  # Base minimum trade size in USDT (fallback/safety minimum)
 MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', '15.0'))  # Maximum drawdown percentage allowed
 
 # Trading Strategy Parameters
