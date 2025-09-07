@@ -5848,6 +5848,11 @@ def detect_dust_positions(min_usdt_value=5.0):
                     usdt_value = free_balance * price
                     
                     if 0 < usdt_value < min_usdt_value:
+                        # Special handling for BNB - it's the target for dust conversion, so skip manual liquidation
+                        if asset == 'BNB':
+                            print(f"   💰 {asset}: {free_balance:.8f} (~${usdt_value:.2f}) - BNB dust (skip manual liquidation)")
+                            continue
+                            
                         dust_positions.append({
                             'asset': asset,
                             'symbol': f"{asset}USDT",
@@ -6337,7 +6342,7 @@ def execute_position_rebalancing():
             else:
                 print(f"✅ {asset} RSI: {asset_rsi:.1f} < {rsi_threshold} - Within normal range")
             
-        # 2. Detect and liquidate dust positions
+        # 2. Detect and liquidate dust positions (excluding BNB which is dust conversion target)
         dust_positions = detect_dust_positions(min_usdt_value=5.0)
         
         if dust_positions:
@@ -6358,7 +6363,7 @@ def execute_position_rebalancing():
                         rebalancing_results["errors"].append(f"Failed to liquidate {dust_pos['asset']}: {result['error']}")
                         print(f"❌ Failed to liquidate {dust_pos['asset']}: {result['error']}")
             
-            # Try dust conversion for any remaining small balances
+            # Try dust conversion for any remaining small balances (excluding BNB itself)
             print(f"\n🔄 Attempting dust conversion for remaining small balances...")
             dust_conversion_result = convert_dust_to_bnb()
             
@@ -6367,11 +6372,13 @@ def execute_position_rebalancing():
                 print(f"✅ Converted {len(dust_conversion_result['converted_assets'])} assets to BNB")
             elif not dust_conversion_result["success"] and "too small" in dust_conversion_result.get("error", "").lower():
                 print(f"💨 Dust conversion skipped: {dust_conversion_result['error']}")
+            elif not dust_conversion_result["success"] and "no dust to convert" in dust_conversion_result.get("message", "").lower():
+                print(f"ℹ️ No eligible assets found for dust conversion (BNB is excluded as target currency)")
             else:
                 print(f"⚠️ Dust conversion failed: {dust_conversion_result.get('error', 'Unknown error')}")
             
         else:
-            print("ℹ️ No dust positions found")
+            print("ℹ️ No dust positions found (BNB dust is excluded - it's the target currency for dust conversion)")
         
         # Initialize dust_conversions if not set
         if 'dust_conversions' not in rebalancing_results:
