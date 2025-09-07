@@ -3075,27 +3075,61 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 qty = raw_qty
             
             if symbol_info:
-                print("\n=== Final Position Sizing ===")
-                # Get lot size filter
-                lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
-                min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
-                print(f"Minimum allowed quantity: {min_qty}")
+                print("\n=== Enhanced Order Validation ===")
                 
-                # Use smart minimum trade value calculation with adaptive margin
-                smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
-                if qty * current_price < smart_min_trade_value:
-                    qty = smart_min_trade_value / current_price
-                    print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
-                
-                qty = max(min_qty, qty)
-                print(f"Quantity after minimum check: {qty}")
-                
-                # Round to correct precision
-                step_size = float(lot_size_filter['stepSize']) if lot_size_filter else 0.001
-                precision = len(str(step_size).split('.')[-1])
-                qty = round(qty - (qty % float(step_size)), precision)
-                print(f"Final quantity after rounding (step size {step_size}): {qty}")
-                print(f"Estimated trade value: {qty * current_price} USDT")
+                # Use comprehensive order validation
+                try:
+                    from order_validator import OrderValidator, log_validation_result
+                    validator = OrderValidator(client)
+                    
+                    validation_result = validator.validate_order(symbol, qty, signal, current_price)
+                    
+                    if validation_result['is_valid']:
+                        qty = validation_result['adjusted_quantity']
+                        print(f"✅ Order validation passed")
+                        print(f"Final validated quantity: {qty:.8f}")
+                        print(f"Estimated trade value: ${qty * current_price:.2f} USDT")
+                        
+                        if validation_result['warnings']:
+                            for warning in validation_result['warnings']:
+                                print(f"⚠️ {warning}")
+                    else:
+                        print(f"❌ Order validation failed:")
+                        for error in validation_result['errors']:
+                            print(f"   - {error}")
+                        
+                        # Log validation errors
+                        log_validation_result(validation_result, symbol, "execute_trade")
+                        
+                        # Return early if validation fails
+                        trade_info['status'] = 'validation_failed'
+                        trade_info['error'] = '; '.join(validation_result['errors'])
+                        return f"Order validation failed: {'; '.join(validation_result['errors'])}"
+                        
+                except ImportError:
+                    # Fallback to original validation if order_validator is not available
+                    print("⚠️ Enhanced validation not available, using basic validation")
+                    
+                    # Get lot size filter
+                    lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                    min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
+                    print(f"Minimum allowed quantity: {min_qty}")
+                    
+                    # Use smart minimum trade value calculation with adaptive margin
+                    smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
+                    if qty * current_price < smart_min_trade_value:
+                        qty = smart_min_trade_value / current_price
+                        print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
+                    
+                    qty = max(min_qty, qty)
+                    print(f"Quantity after minimum check: {qty}")
+                    
+                    # Round to correct precision
+                    step_size = float(lot_size_filter['stepSize']) if lot_size_filter else 0.001
+                    precision = len(str(step_size).split('.')[-1])
+                    qty = round(qty - (qty % float(step_size)), precision)
+                    print(f"Final quantity after rounding (step size {step_size}): {qty}")
+                    print(f"Estimated trade value: {qty * current_price} USDT")
     except Exception as e:
         log_error_to_csv(str(e), "POSITION_SIZE_ERROR", "execute_trade", "ERROR")
         qty = 0.001  # Fallback to minimum quantity
@@ -3311,10 +3345,42 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
             print(f"❌ INSUFFICIENT BALANCE ERROR: {error_msg}")
             print(f"   This should have been caught earlier in signal generation!")
             log_error_to_csv(f"API Balance Error (Code: {error_code}): {error_msg}", "API_ERROR", "execute_trade", "ERROR")
-        elif error_code == -1013 or "filter failure" in error_msg.lower():
+        elif error_code == -1013:
+            # Enhanced handling for filter failures
             trade_info['status'] = 'filter_failure'
             trade_info['error'] = f"Order filter failure: {error_msg}"
-            log_error_to_csv(f"API Filter Error (Code: {error_code}): {error_msg}", "FILTER_ERROR", "execute_trade", "ERROR")
+            
+            # Log detailed filter failure information
+            filter_type = "UNKNOWN"
+            if "NOTIONAL" in error_msg:
+                filter_type = "NOTIONAL"
+            elif "LOT_SIZE" in error_msg:
+                filter_type = "LOT_SIZE"
+            elif "PRICE_FILTER" in error_msg:
+                filter_type = "PRICE_FILTER"
+            elif "MIN_NOTIONAL" in error_msg:
+                filter_type = "MIN_NOTIONAL"
+            
+            detailed_msg = f"Filter failure ({filter_type}): {error_msg}"
+            print(f"❌ FILTER FAILURE: {detailed_msg}")
+            print(f"   Symbol: {symbol}, Quantity: {qty}, Signal: {signal}")
+            
+            # Try to get symbol info for debugging
+            try:
+                if client:
+                    from order_validator import OrderValidator
+                    validator = OrderValidator(client)
+                    current_price = client.get_ticker(symbol=symbol)['lastPrice']
+                    min_valid_qty = validator.calculate_minimum_valid_quantity(symbol, float(current_price))
+                    print(f"   Current price: ${current_price}")
+                    print(f"   Minimum valid quantity: {min_valid_qty:.8f}")
+                    print(f"   Attempted quantity: {qty:.8f}")
+                    print(f"   Order value: ${qty * float(current_price):.2f}")
+            except Exception as debug_error:
+                print(f"   Debug info failed: {debug_error}")
+            
+            log_error_to_csv(f"API Filter Error (Code: {error_code}, Type: {filter_type}): {error_msg}", 
+                           "FILTER_ERROR", "execute_trade", "ERROR")
         else:
             trade_info['error'] = error_msg
             log_error_to_csv(f"API Error (Code: {error_code}): {error_msg}", "API_ERROR", "execute_trade", "ERROR")
@@ -3329,10 +3395,11 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
             'sentiment': bot_status.get('sentiment', 'neutral'),
             'balance_before': 0,
             'balance_after': 0,
-            'profit_loss': 0
+            'profit_loss': 0,
+            'error_code': error_code,
+            'error_type': trade_info.get('status', 'api_error')
         }
         log_trade_to_csv(trade_info, additional_data)
-        log_error_to_csv(str(e), "API_ERROR", "execute_trade", "ERROR")
 
         # Send Telegram notification for failed trades
         if TELEGRAM_AVAILABLE:
@@ -5896,42 +5963,77 @@ def liquidate_dust_position(dust_position):
         print(f"   Quantity: {quantity:.8f} {asset}")
         print(f"   Est. Value: ${dust_position['usdt_value']:.2f}")
         
-        # Use existing LOT_SIZE validation logic from sell_partial_position
-        symbol_info = client.get_symbol_info(symbol)
-        if not symbol_info:
-            return {"success": False, "error": f"Could not get symbol info for {symbol}"}
+        # Enhanced order validation
+        try:
+            from order_validator import OrderValidator, log_validation_result
+            validator = OrderValidator(client)
             
-        # Find lot size and notional filters
-        lot_size_filter = None
-        min_notional_filter = None
-        for f in symbol_info['filters']:
-            if f['filterType'] == 'LOT_SIZE':
-                lot_size_filter = f
-            elif f['filterType'] == 'MIN_NOTIONAL':
-                min_notional_filter = f
-                
-        if lot_size_filter:
-            step_size = float(lot_size_filter['stepSize'])
-            quantity = round(quantity / step_size) * step_size
-            
-        # Check minimum quantity
-        min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
-        if quantity < min_qty:
-            return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
-        
-        # Check minimum notional value with fresh price
-        if min_notional_filter:
-            # Get fresh price to ensure accurate notional calculation
+            # Get fresh price for accurate validation
             try:
                 ticker = client.get_ticker(symbol=symbol)
                 current_price = float(ticker['lastPrice'])
             except:
                 current_price = dust_position['price']  # Fallback to stored price
+            
+            validation_result = validator.validate_order(symbol, quantity, 'SELL', current_price)
+            
+            if validation_result['is_valid']:
+                quantity = validation_result['adjusted_quantity']
+                print(f"✅ Dust position validation passed")
+                print(f"Final validated quantity: {quantity:.8f}")
                 
-            notional_value = quantity * current_price
-            min_notional = float(min_notional_filter['minNotional'])
-            if notional_value < min_notional:
-                return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}"}
+                if validation_result['warnings']:
+                    for warning in validation_result['warnings']:
+                        print(f"⚠️ {warning}")
+            else:
+                print(f"❌ Dust position validation failed:")
+                for error in validation_result['errors']:
+                    print(f"   - {error}")
+                
+                # Log validation errors
+                log_validation_result(validation_result, symbol, "liquidate_dust_position")
+                
+                return {"success": False, "error": f"Validation failed: {'; '.join(validation_result['errors'])}"}
+                
+        except ImportError:
+            print("⚠️ Enhanced validation not available, using basic validation")
+            
+            # Fallback to original validation
+            symbol_info = client.get_symbol_info(symbol)
+            if not symbol_info:
+                return {"success": False, "error": f"Could not get symbol info for {symbol}"}
+                
+            # Find lot size and notional filters
+            lot_size_filter = None
+            min_notional_filter = None
+            for f in symbol_info['filters']:
+                if f['filterType'] == 'LOT_SIZE':
+                    lot_size_filter = f
+                elif f['filterType'] == 'MIN_NOTIONAL':
+                    min_notional_filter = f
+                    
+            if lot_size_filter:
+                step_size = float(lot_size_filter['stepSize'])
+                quantity = round(quantity / step_size) * step_size
+                
+            # Check minimum quantity
+            min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
+            if quantity < min_qty:
+                return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
+            
+            # Check minimum notional value with fresh price
+            if min_notional_filter:
+                # Get fresh price to ensure accurate notional calculation
+                try:
+                    ticker = client.get_ticker(symbol=symbol)
+                    current_price = float(ticker['lastPrice'])
+                except:
+                    current_price = dust_position['price']  # Fallback to stored price
+                    
+                notional_value = quantity * current_price
+                min_notional = float(min_notional_filter['minNotional'])
+                if notional_value < min_notional:
+                    return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}"}
         
         # Execute market sell
         order = client.order_market_sell(symbol=symbol, quantity=quantity)
@@ -6252,13 +6354,25 @@ def execute_position_rebalancing():
                 
         # Send Telegram summary if available
         if TELEGRAM_AVAILABLE and (rebalancing_results['partial_sells'] or rebalancing_results['dust_liquidations'] or rebalancing_results['dust_conversions']):
-            summary_msg = f"🔄 Position Rebalancing Complete\n"
-            summary_msg += f"💰 Total USDT Freed: ${rebalancing_results['total_freed_usdt']:.2f}\n"
-            summary_msg += f"📈 Partial Sells: {len(rebalancing_results['partial_sells'])}\n"
-            summary_msg += f"💨 Dust Liquidated: {len(rebalancing_results['dust_liquidations'])}\n"
-            summary_msg += f"🔄 Dust Converted: {len(rebalancing_results['dust_conversions'])}"
-            
-            notify_market_update(summary_msg)
+            try:
+                # Prepare proper notification with required parameters
+                summary_msg = f"🔄 Position Rebalancing Complete\n"
+                summary_msg += f"💰 Total USDT Freed: ${rebalancing_results['total_freed_usdt']:.2f}\n"
+                summary_msg += f"📈 Partial Sells: {len(rebalancing_results['partial_sells'])}\n"
+                summary_msg += f"💨 Dust Liquidated: {len(rebalancing_results['dust_liquidations'])}\n"
+                summary_msg += f"🔄 Dust Converted: {len(rebalancing_results['dust_conversions'])}"
+                
+                # Use telegram notifier directly for rebalancing notifications
+                from telegram_notify import telegram_notifier
+                
+                # Send as a trade notification instead of market update
+                telegram_notifier.send_message(summary_msg)
+                print("📱 Rebalancing summary sent via Telegram")
+                
+            except Exception as telegram_error:
+                print(f"⚠️ Telegram notification failed: {telegram_error}")
+                log_error_to_csv(f"Telegram rebalancing notification failed: {telegram_error}", 
+                               "TELEGRAM_ERROR", "execute_position_rebalancing", "WARNING")
             
         return rebalancing_results
         
