@@ -3089,12 +3089,23 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
             if symbol_info:
                 print("\n=== Enhanced Order Validation ===")
                 
+                # For SELL orders, get available balance first
+                available_balance = None
+                if signal == "SELL":
+                    has_balance, available_balance, balance_msg = check_coin_balance(symbol)
+                    if not has_balance:
+                        print(f"❌ Insufficient balance for SELL: {balance_msg}")
+                        trade_info['status'] = 'insufficient_funds'
+                        trade_info['error'] = balance_msg
+                        return f"Insufficient balance: {balance_msg}"
+                    print(f"💰 Available balance for SELL: {available_balance}")
+                
                 # Use comprehensive order validation
                 try:
                     from order_validator import OrderValidator, log_validation_result
                     validator = OrderValidator(client)
                     
-                    validation_result = validator.validate_order(symbol, qty, signal, current_price)
+                    validation_result = validator.validate_order(symbol, qty, signal, current_price, available_balance)
                     
                     if validation_result['is_valid']:
                         qty = validation_result['adjusted_quantity']
@@ -3122,16 +3133,30 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     # Fallback to original validation if order_validator is not available
                     print("⚠️ Enhanced validation not available, using basic validation")
                     
+                    # For SELL orders, apply balance limit first
+                    if signal == "SELL" and available_balance is not None:
+                        if qty > available_balance:
+                            print(f"⚠️ Adjusting quantity from {qty} to {available_balance} (available balance)")
+                            qty = available_balance
+                    
                     # Get lot size filter
                     lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
                     min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
                     print(f"Minimum allowed quantity: {min_qty}")
                     
+                    # Check if quantity meets minimum requirements
+                    if qty < min_qty:
+                        print(f"❌ Quantity {qty:.8f} below minimum {min_qty:.8f}")
+                        trade_info['status'] = 'insufficient_quantity'
+                        trade_info['error'] = f"Quantity {qty:.8f} below minimum {min_qty:.8f}"
+                        return f"Quantity too small: {qty:.8f} < {min_qty:.8f}"
+                    
                     # Use smart minimum trade value calculation with adaptive margin
-                    smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
-                    if qty * current_price < smart_min_trade_value:
-                        qty = smart_min_trade_value / current_price
-                        print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
+                    if signal == "BUY":
+                        smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
+                        if qty * current_price < smart_min_trade_value:
+                            qty = smart_min_trade_value / current_price
+                            print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
                     
                     qty = max(min_qty, qty)
                     print(f"Quantity after minimum check: {qty}")
@@ -3212,34 +3237,15 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         elif signal == "SELL":
             print("Processing SELL order...")
 
-            # Double-check balance before executing (additional safety)
-            has_balance, available_balance, balance_msg = check_coin_balance(symbol)
-
-            if not has_balance:
-                print(f"❌ Final balance check failed: {balance_msg}")
-                trade_info['status'] = 'insufficient_funds'
-                trade_info['error'] = balance_msg
-                bot_status['trading_summary']['failed_trades'] += 1
-                log_error_to_csv(f"SELL order blocked by final balance check: {balance_msg}",
-                                 "BALANCE_ERROR", "execute_trade", "WARNING")
-                return f"SELL order blocked: {balance_msg}"
-
             # Extract base asset from symbol (e.g., "BTC" from "BTCUSDT")
             base_asset = symbol[:-4] if symbol.endswith('USDT') else symbol.split(symbol_info['quoteAsset'])[0]
 
-            print(f"✅ Final balance check passed. Proceeding with SELL order...")
-            print(f"Available {base_asset} balance: {available_balance}")
-            print(f"Requested quantity: {qty}")
+            print(f"✅ Proceeding with validated SELL order...")
+            print(f"Validated quantity: {qty} {base_asset}")
 
-            # Adjust quantity if needed to not exceed available balance
-            if qty > available_balance:
-                print(f"⚠️ Adjusting quantity from {qty} to {available_balance} (max available)")
-                qty = available_balance
-                trade_info['quantity'] = qty
-
-            # Final quantity check with minimum requirements
+            # Final quantity check (should be handled by validation, but extra safety)
             if qty <= 0:
-                print("❌ Quantity is zero or negative after adjustments")
+                print("❌ Quantity is zero or negative after validation")
                 trade_info['status'] = 'insufficient_quantity'
                 bot_status['trading_summary']['failed_trades'] += 1
                 return "Cannot place SELL order: quantity too small"
@@ -5984,7 +5990,7 @@ def liquidate_dust_position(dust_position):
         print(f"   Quantity: {quantity:.8f} {asset}")
         print(f"   Est. Value: ${dust_position['usdt_value']:.2f}")
         
-        # Enhanced order validation
+        # Enhanced order validation for dust liquidation
         try:
             from order_validator import OrderValidator, log_validation_result
             validator = OrderValidator(client)
@@ -5996,7 +6002,8 @@ def liquidate_dust_position(dust_position):
             except:
                 current_price = dust_position['price']  # Fallback to stored price
             
-            validation_result = validator.validate_order(symbol, quantity, 'SELL', current_price)
+            # Pass available balance (which is the dust quantity) to validator
+            validation_result = validator.validate_order(symbol, quantity, 'SELL', current_price, quantity)
             
             if validation_result['is_valid']:
                 quantity = validation_result['adjusted_quantity']
@@ -6011,10 +6018,16 @@ def liquidate_dust_position(dust_position):
                 for error in validation_result['errors']:
                     print(f"   - {error}")
                 
+                # Check if this is a fundamental issue (insufficient notional value)
+                error_str = '; '.join(validation_result['errors'])
+                if 'below minimum' in error_str.lower() or 'notional' in error_str.lower():
+                    print(f"💨 Dust position too small to liquidate: {asset} ({quantity:.8f})")
+                    return {"success": False, "error": f"Dust too small: {error_str}", "skip_conversion": True}
+                
                 # Log validation errors
                 log_validation_result(validation_result, symbol, "liquidate_dust_position")
                 
-                return {"success": False, "error": f"Validation failed: {'; '.join(validation_result['errors'])}"}
+                return {"success": False, "error": f"Validation failed: {error_str}"}
                 
         except ImportError:
             print("⚠️ Enhanced validation not available, using basic validation")
@@ -6040,7 +6053,7 @@ def liquidate_dust_position(dust_position):
             # Check minimum quantity
             min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
             if quantity < min_qty:
-                return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}"}
+                return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}", "skip_conversion": True}
             
             # Check minimum notional value with fresh price
             if min_notional_filter:
@@ -6054,7 +6067,7 @@ def liquidate_dust_position(dust_position):
                 notional_value = quantity * current_price
                 min_notional = float(min_notional_filter['minNotional'])
                 if notional_value < min_notional:
-                    return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}"}
+                    return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}", "skip_conversion": True}
         
         # Execute market sell
         order = client.order_market_sell(symbol=symbol, quantity=quantity)
@@ -6338,7 +6351,12 @@ def execute_position_rebalancing():
                     rebalancing_results["total_freed_usdt"] += result["value"]
                     print(f"✅ Liquidated {dust_pos['asset']}: ${result['value']:.2f}")
                 else:
-                    rebalancing_results["errors"].append(f"Failed to liquidate {dust_pos['asset']}: {result['error']}")
+                    # Check if this is a "too small" error that should be skipped
+                    if result.get("skip_conversion", False):
+                        print(f"💨 Skipping {dust_pos['asset']}: Too small for liquidation (will try dust conversion)")
+                    else:
+                        rebalancing_results["errors"].append(f"Failed to liquidate {dust_pos['asset']}: {result['error']}")
+                        print(f"❌ Failed to liquidate {dust_pos['asset']}: {result['error']}")
             
             # Try dust conversion for any remaining small balances
             print(f"\n🔄 Attempting dust conversion for remaining small balances...")
@@ -6347,6 +6365,10 @@ def execute_position_rebalancing():
             if dust_conversion_result["success"] and dust_conversion_result.get("converted_assets"):
                 rebalancing_results["dust_conversions"] = dust_conversion_result["converted_assets"]
                 print(f"✅ Converted {len(dust_conversion_result['converted_assets'])} assets to BNB")
+            elif not dust_conversion_result["success"] and "too small" in dust_conversion_result.get("error", "").lower():
+                print(f"💨 Dust conversion skipped: {dust_conversion_result['error']}")
+            else:
+                print(f"⚠️ Dust conversion failed: {dust_conversion_result.get('error', 'Unknown error')}")
             
         else:
             print("ℹ️ No dust positions found")
