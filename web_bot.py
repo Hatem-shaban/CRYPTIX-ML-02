@@ -2210,6 +2210,63 @@ def check_coin_balance(symbol):
         log_error_to_csv(error_msg, "BALANCE_CHECK_ERROR", "check_coin_balance", "ERROR")
         return False, 0, error_msg
 
+def get_account_balance_for_ui():
+    """Get account balance specifically for UI display - smart caching"""
+    try:
+        # Check cache first (5-minute cache for UI)
+        cache_key = 'ui_balance_cache'
+        cache_entry = bot_status.get(cache_key)
+        now = get_cairo_time()
+        if cache_entry and (now - cache_entry['time']).total_seconds() < 300:  # 5-minute cache
+            return cache_entry['data']
+        
+        if not client:
+            return {"usdt_balance": 0.0, "total_value": 0.0, "error": "Client not initialized"}
+        
+        # Get account info
+        account_info = client.get_account()
+        usdt_balance = 0.0
+        total_value = 0.0
+        
+        # Find USDT balance and calculate total portfolio value
+        for balance in account_info['balances']:
+            free_balance = float(balance['free'])
+            locked_balance = float(balance['locked'])
+            total_balance = free_balance + locked_balance
+            
+            if total_balance > 0:
+                asset = balance['asset']
+                
+                if asset == 'USDT':
+                    usdt_balance = total_balance
+                    total_value += total_balance
+                elif asset in ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'DOT', 'LINK', 'AVAX', 'XRP']:
+                    # Get price for major coins to calculate value
+                    try:
+                        ticker = client.get_ticker(symbol=f"{asset}USDT")
+                        price = float(ticker['lastPrice'])
+                        asset_value = total_balance * price
+                        total_value += asset_value
+                    except Exception:
+                        pass  # Skip if price fetch fails
+        
+        result = {
+            "usdt_balance": usdt_balance,
+            "total_value": total_value,
+            "timestamp": format_cairo_time(),
+            "error": None
+        }
+        
+        # Cache the result
+        bot_status[cache_key] = {'data': result, 'time': now}
+        
+        return result
+        
+    except Exception as e:
+        error_msg = f"Error getting account balance for UI: {e}"
+        log_error_to_csv(error_msg, "UI_BALANCE_ERROR", "get_account_balance_for_ui", "WARNING")
+        return {"usdt_balance": 0.0, "total_value": 0.0, "error": error_msg}
+
 def signal_generator(df, symbol="BTCUSDT"):
     print("\n=== Generating Trading Signal ===")
     print(f"Analyzing market sentiment from order book and trade data...")
@@ -4705,35 +4762,28 @@ def home():
                 </div>
             </div>
             
-            <!-- Trading Information -->
+            <!-- Account Balance -->
             <div class="trading-section">
-                <div class="section-title">📊 Trading Status</div>
+                <div class="section-title">� Account Balance</div>
+                {% if account_balance.error %}
                 <div class="info-item">
-                    <span class="info-label">Last Signal</span>
-                    <span class="info-value signal-{{ status.last_signal.lower() }}">{{ status.last_signal }}</span>
+                    <span class="info-label">Status</span>
+                    <span class="info-value" style="color: #dc3545;">{{ account_balance.error }}</span>
+                </div>
+                {% else %}
+                <div class="info-item">
+                    <span class="info-label">USDT Balance</span>
+                    <span class="info-value" style="color: #28a745; font-weight: bold;">${{ "{:,.2f}".format(account_balance.usdt_balance) }}</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label">Last Scan</span>
-                    <span class="info-value">{{ status.last_scan_time.strftime('%H:%M:%S') if status.last_scan_time else 'Never' }}</span>
+                    <span class="info-label">Total Portfolio</span>
+                    <span class="info-value" style="color: #17a2b8; font-weight: bold;">${{ "{:,.2f}".format(account_balance.total_value) }}</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label">Current Symbol</span>
-                    <span class="info-value">{{ status.current_symbol }}</span>
+                    <span class="info-label">Last Updated</span>
+                    <span class="info-value">{{ account_balance.timestamp.split()[1][:8] if account_balance.timestamp else 'Never' }}</span>
                 </div>
-                <div class="info-item">
-                    <span class="info-label">Current Price</span>
-                    <span class="info-value">${{ "{:,.2f}".format(status.last_price) if status.last_price else 'N/A' }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total Revenue</span>
-                    <span class="info-value" style="color: {{ '#28a745' if status.trading_summary.total_revenue > 0 else '#dc3545' if status.trading_summary.total_revenue < 0 else '#6c757d' }}">
-                        ${{ "{:,.2f}".format(status.trading_summary.total_revenue) }}
-                    </span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Win Rate</span>
-                    <span class="info-value">{{ "{:.1f}".format(status.trading_summary.win_rate) }}%</span>
-                </div>
+                {% endif %}
             </div>
             
             <!-- Strategy Section -->
@@ -4805,7 +4855,12 @@ def home():
     </script>
 </body>
 </html>
-    """, status=bot_status, current_time=format_cairo_time(), time_remaining=get_time_remaining_for_next_signal(), strategy_desc=strategy_desc)
+    """, 
+    status=bot_status, 
+    current_time=format_cairo_time(), 
+    time_remaining=get_time_remaining_for_next_signal(), 
+    strategy_desc=strategy_desc,
+    account_balance=get_account_balance_for_ui())
 
 
 @app.route('/start')
