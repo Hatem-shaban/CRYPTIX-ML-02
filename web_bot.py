@@ -2942,6 +2942,18 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         print(f"Error getting symbol info: {e}")
         return f"Failed to get symbol info: {e}"
     
+    # Create trade info structure early to avoid scope issues
+    trade_info = {
+        'timestamp': format_cairo_time(),
+        'signal': signal,
+        'symbol': symbol,
+        'quantity': 0.001,  # Default minimum, will be updated
+        'status': 'initializing',
+        'price': 0,
+        'value': 0,
+        'fee': 0
+    }
+
     # Calculate position size based on available balance and risk management
     try:
         if client:
@@ -3134,17 +3146,11 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         log_error_to_csv(str(e), "POSITION_SIZE_ERROR", "execute_trade", "ERROR")
         qty = 0.001  # Fallback to minimum quantity
     
-    # Create trade info structure
-    trade_info = {
-        'timestamp': format_cairo_time(),
-        'signal': signal,
-        'symbol': symbol,
+    # Update trade info with final quantity
+    trade_info.update({
         'quantity': qty,
-        'status': 'simulated',
-        'price': 0,
-        'value': 0,
-        'fee': 0
-    }
+        'status': 'ready_for_execution'
+    })
     
     if client is None:
         error_msg = "Trading client not initialized. Cannot execute trade."
@@ -3926,14 +3932,29 @@ def trading_loop():
                                     'last_trade_time': None
                                 }
                             
+                            # Ensure all required keys exist (defensive programming)
+                            required_keys = {
+                                'total_trades': 0,
+                                'successful_trades': 0,
+                                'last_trade_time': None
+                            }
+                            
+                            for key, default_value in required_keys.items():
+                                if key not in bot_status['monitored_pairs'][current_symbol]:
+                                    bot_status['monitored_pairs'][current_symbol][key] = default_value
+                            
                             # Update tracking safely
                             try:
                                 bot_status['monitored_pairs'][current_symbol]['total_trades'] += 1
                                 if "executed" in str(result).lower():
                                     bot_status['monitored_pairs'][current_symbol]['successful_trades'] += 1
-                            except KeyError as ke:
+                                    bot_status['monitored_pairs'][current_symbol]['last_trade_time'] = get_cairo_time()
+                            except (KeyError, TypeError) as ke:
                                 print(f"⚠️ Monitored pairs tracking error: {ke}")
-                                # Re-initialize if needed
+                                print(f"   Current symbol: {current_symbol}")
+                                print(f"   Available keys: {list(bot_status['monitored_pairs'].get(current_symbol, {}).keys())}")
+                                
+                                # Force complete re-initialization
                                 bot_status['monitored_pairs'][current_symbol] = {
                                     'last_signal': signal,
                                     'last_price': current_price,
@@ -3942,7 +3963,7 @@ def trading_loop():
                                     'sentiment': 'neutral',
                                     'total_trades': 1,
                                     'successful_trades': 1 if "executed" in str(result).lower() else 0,
-                                    'last_trade_time': get_cairo_time()
+                                    'last_trade_time': get_cairo_time() if "executed" in str(result).lower() else None
                                 }
                             
                             # In hunting mode, only take the best trade
