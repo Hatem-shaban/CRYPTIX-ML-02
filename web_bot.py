@@ -2408,6 +2408,21 @@ def signal_generator(df, symbol="BTCUSDT"):
             if ML_STRATEGY_AVAILABLE:
                 print("🧠 Using ML Pure Strategy - AI-Driven Trading")
                 signal, reason = ml_pure_strategy(df, symbol, indicators)
+                
+                # Early exit for very low probability signals to avoid unnecessary computation
+                if hasattr(signal, '__dict__') or isinstance(reason, str):
+                    # Extract probability from reason if available
+                    import re
+                    prob_match = re.search(r'success probability.*?(\d+\.?\d*)', reason.lower())
+                    if prob_match:
+                        success_prob = float(prob_match.group(1))
+                        if success_prob < 0.05:  # Less than 5% success probability
+                            print(f"🚫 Early exit: Extremely low success probability ({success_prob:.2f}) detected")
+                            print(f"   Skipping complex ML processing to save resources")
+                            signal = "HOLD"
+                            reason = f"Early exit due to extremely low success probability ({success_prob:.2f})"
+                            # Skip all further ML processing
+                            return signal, reason, indicators
             else:
                 print("⚠️ ML Pure Strategy not available, falling back to ADAPTIVE")
                 signal, reason = adaptive_strategy(df, symbol, indicators)
@@ -3110,8 +3125,23 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         position_result['quantity'] *= multiplier
                         print(f"   📉 Position size adjusted by {multiplier:.0%} due to risk factors")
                     
-                    # Use enhanced position size
+                    # Use enhanced position size, but ensure it meets smart minimum requirements
                     qty = position_result['quantity']
+                    
+                    # For BUY orders, ensure quantity meets smart minimum from the start
+                    if signal == "BUY":
+                        smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
+                        min_qty_for_smart_minimum = smart_min_trade_value / current_price
+                        
+                        if qty < min_qty_for_smart_minimum:
+                            print(f"   📈 Position size too small for smart minimum (${smart_min_trade_value:.2f})")
+                            print(f"   Adjusting from {qty:.8f} to {min_qty_for_smart_minimum:.8f}")
+                            qty = min_qty_for_smart_minimum
+                            
+                            # Update position result with adjusted values
+                            position_result['quantity'] = qty
+                            position_result['risk_amount'] = qty * current_price
+                            position_result['risk_percentage'] = (qty * current_price / usdt_balance) * 100
                     
                     print(f"\n📊 Enhanced Position Sizing Results:")
                     print(f"   Optimal Quantity: {qty:.8f}")
@@ -3181,10 +3211,49 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         # Log validation errors
                         log_validation_result(validation_result, symbol, "execute_trade")
                         
-                        # Return early if validation fails
-                        trade_info['status'] = 'validation_failed'
-                        trade_info['error'] = '; '.join(validation_result['errors'])
-                        return f"Order validation failed: {'; '.join(validation_result['errors'])}"
+                        # Implement fallback position sizing instead of failing completely
+                        print(f"🔄 Attempting fallback position sizing...")
+                        
+                        try:
+                            # Try to calculate minimum valid quantity for this symbol
+                            min_valid_qty = validator.calculate_minimum_valid_quantity(symbol, current_price)
+                            
+                            # Check if we can afford the minimum quantity
+                            min_order_value = min_valid_qty * current_price
+                            
+                            if signal == "BUY" and usdt_balance >= min_order_value:
+                                print(f"💡 Using minimum valid quantity fallback: {min_valid_qty:.8f}")
+                                print(f"   Order value: ${min_order_value:.2f}")
+                                qty = min_valid_qty
+                                trade_info['fallback_sizing'] = True
+                            elif signal == "SELL" and available_balance and available_balance >= min_valid_qty:
+                                # For SELL, use minimum of available balance or min valid quantity
+                                fallback_qty = min(available_balance, min_valid_qty)
+                                fallback_value = fallback_qty * current_price
+                                
+                                # Check if fallback meets minimum notional
+                                min_notional = validation_result.get('min_notional_required', 10.0)
+                                if fallback_value >= min_notional:
+                                    print(f"💡 Using fallback quantity for SELL: {fallback_qty:.8f}")
+                                    print(f"   Order value: ${fallback_value:.2f}")
+                                    qty = fallback_qty
+                                    trade_info['fallback_sizing'] = True
+                                else:
+                                    print(f"❌ Even fallback sizing insufficient: ${fallback_value:.2f} < ${min_notional:.2f}")
+                                    trade_info['status'] = 'validation_failed'
+                                    trade_info['error'] = f"Balance too small for minimum requirements: ${fallback_value:.2f} < ${min_notional:.2f}"
+                                    return f"Balance too small for minimum requirements: ${fallback_value:.2f} < ${min_notional:.2f}"
+                            else:
+                                # Can't afford even minimum quantity
+                                trade_info['status'] = 'validation_failed' 
+                                trade_info['error'] = f"Insufficient balance for minimum quantity: ${min_order_value:.2f}"
+                                return f"Insufficient balance for minimum quantity: ${min_order_value:.2f}"
+                                
+                        except Exception as fallback_error:
+                            print(f"❌ Fallback position sizing failed: {fallback_error}")
+                            trade_info['status'] = 'validation_failed'
+                            trade_info['error'] = '; '.join(validation_result['errors'])
+                            return f"Order validation failed: {'; '.join(validation_result['errors'])}"
                         
                 except ImportError:
                     # Fallback to original validation if order_validator is not available
@@ -3196,27 +3265,69 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                             print(f"⚠️ Adjusting quantity from {qty} to {available_balance} (available balance)")
                             qty = available_balance
                     
-                    # Get lot size filter
+                    # Get symbol filters for comprehensive basic validation
                     lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                    min_notional_filter = next((f for f in symbol_info['filters'] if f['filterType'] in ['MIN_NOTIONAL', 'NOTIONAL']), None)
+                    
                     min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
                     print(f"Minimum allowed quantity: {min_qty}")
                     
-                    # Check if quantity meets minimum requirements
+                    # Check LOT_SIZE requirement
                     if qty < min_qty:
                         print(f"❌ Quantity {qty:.8f} below minimum {min_qty:.8f}")
                         trade_info['status'] = 'insufficient_quantity'
                         trade_info['error'] = f"Quantity {qty:.8f} below minimum {min_qty:.8f}"
                         return f"Quantity too small: {qty:.8f} < {min_qty:.8f}"
                     
-                    # Use smart minimum trade value calculation with adaptive margin
+                    # Check NOTIONAL requirement (critical missing validation)
+                    if min_notional_filter:
+                        min_notional = float(min_notional_filter['minNotional'])
+                        order_value = qty * current_price
+                        print(f"Order value: ${order_value:.4f}, Min notional: ${min_notional:.2f}")
+                        
+                        if order_value < min_notional:
+                            # Calculate minimum quantity needed for notional
+                            required_qty = min_notional / current_price
+                            
+                            # Check if we can afford the minimum notional
+                            if signal == "BUY" and min_notional > usdt_balance:
+                                print(f"❌ Insufficient USDT for minimum notional: ${min_notional:.2f} > ${usdt_balance:.2f}")
+                                trade_info['status'] = 'insufficient_funds'
+                                trade_info['error'] = f"Insufficient USDT for minimum notional: ${min_notional:.2f}"
+                                return f"Insufficient USDT for minimum notional: ${min_notional:.2f}"
+                            elif signal == "SELL" and available_balance is not None:
+                                max_possible_value = available_balance * current_price
+                                if max_possible_value < min_notional:
+                                    print(f"❌ Maximum possible order value ${max_possible_value:.2f} below minimum ${min_notional:.2f}")
+                                    trade_info['status'] = 'insufficient_quantity'
+                                    trade_info['error'] = f"Balance too small for minimum notional"
+                                    return f"Balance too small for minimum notional: ${max_possible_value:.2f} < ${min_notional:.2f}"
+                            
+                            # Adjust quantity to meet minimum notional
+                            qty = required_qty
+                            print(f"🔧 Adjusted quantity to meet minimum notional: {qty:.8f}")
+                            print(f"   New order value: ${qty * current_price:.2f}")
+                    
+                    # Apply LOT_SIZE rounding if needed
+                    if lot_size_filter:
+                        step_size = float(lot_size_filter['stepSize'])
+                        # Round down to nearest step size
+                        qty = (qty // step_size) * step_size
+                        # Ensure we still meet minimum after rounding
+                        if qty < min_qty:
+                            qty = min_qty
+                        print(f"Quantity after LOT_SIZE rounding: {qty:.8f}")
+                    
+                    # Use smart minimum trade value calculation with adaptive margin for BUY orders
                     if signal == "BUY":
                         smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
                         if qty * current_price < smart_min_trade_value:
-                            qty = smart_min_trade_value / current_price
-                            print(f"Adjusted quantity for smart minimum trade value (${smart_min_trade_value:.2f}): {qty}")
+                            adj_qty = smart_min_trade_value / current_price
+                            print(f"🔧 Smart minimum adjustment: ${smart_min_trade_value:.2f} requires {adj_qty:.8f}")
+                            qty = adj_qty
                     
-                    qty = max(min_qty, qty)
-                    print(f"Quantity after minimum check: {qty}")
+                    print(f"Final basic validation quantity: {qty:.8f}")
+                    print(f"Final estimated trade value: ${qty * current_price:.2f}")
                     
                     # Round to correct precision
                     step_size = float(lot_size_filter['stepSize']) if lot_size_filter else 0.001
@@ -3240,6 +3351,33 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         return error_msg
     
     try:
+        print("\n=== Final Pre-Execution Validation ===")
+        
+        # Final validation checkpoint to catch any remaining issues
+        try:
+            from order_validator import validate_order_before_execution
+            
+            is_valid, adjusted_qty, validation_error = validate_order_before_execution(
+                client, symbol, qty, signal
+            )
+            
+            if not is_valid:
+                print(f"❌ Final validation failed: {validation_error}")
+                trade_info['status'] = 'final_validation_failed'
+                trade_info['error'] = validation_error
+                log_error_to_csv(f"Final validation failed: {validation_error}", "FINAL_VALIDATION_ERROR", "execute_trade", "ERROR")
+                return f"Final validation failed: {validation_error}"
+            
+            if adjusted_qty != qty:
+                print(f"🔧 Final quantity adjustment: {qty:.8f} -> {adjusted_qty:.8f}")
+                qty = adjusted_qty
+                trade_info['quantity'] = qty
+                
+            print(f"✅ Final validation passed - Quantity: {qty:.8f}, Value: ${qty * current_price:.2f}")
+            
+        except ImportError:
+            print("⚠️ Final validation module not available, proceeding with current validation")
+        
         print("\n=== Trade Execution ===")
         if signal == "BUY":
             print("Processing BUY order...")
