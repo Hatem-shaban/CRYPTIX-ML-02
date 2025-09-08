@@ -225,7 +225,7 @@ def memory_monitor(max_memory_mb: int = 450):
                 
                 # Force cleanup if memory is high
                 if memory_after['is_critical']:
-                    logger.warning(f"🚨 Critical memory usage: {memory_after['rss_mb']:.1f}MB")
+                    logger.debug(f"🚨 Critical memory usage: {memory_after['rss_mb']:.1f}MB")
                     optimizer.force_garbage_collection()
                 
                 return result
@@ -286,7 +286,7 @@ def log_memory_usage(context: str = ""):
     
     status = "🚨 CRITICAL" if memory_stats['is_critical'] else "⚠️ HIGH" if memory_stats['rss_mb'] > 300 else "✅ OK"
     
-    logger.info(f"💾 Memory {context}: {memory_stats['rss_mb']:.1f}MB ({memory_stats['percent']:.1f}%) - {status}")
+    logger.debug(f"💾 Memory {context}: {memory_stats['rss_mb']:.1f}MB ({memory_stats['percent']:.1f}%) - {status}")
     
     return memory_stats
 
