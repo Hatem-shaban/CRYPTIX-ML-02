@@ -1,17 +1,1 @@
 timestamp,cairo_time,error_type,error_message,function_name,severity,bot_status
-2025-09-07T05:06:55.912510,2025-09-07 08:06:55 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust BNB: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
-2025-09-06T18:10:30.740004,2025-09-06 21:10:30 EEST,API_ERROR,APIError(code=-1013): Filter failure: NOTIONAL,execute_trade,ERROR,TRUE
-2025-09-06T18:10:30.738093,2025-09-06 21:10:30 EEST,RISK_WARNING,Consecutive losses: 3,update_trade_tracking,WARNING,TRUE
-2025-09-06T18:10:30.387947,2025-09-06 21:10:30 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: NOTIONAL,execute_trade,ERROR,TRUE
-2025-09-06T17:39:10.405112,2025-09-06 20:39:10 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust DOT: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
-2025-09-06T17:39:08.399089,2025-09-06 20:39:08 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust BNB: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
-2025-09-06T14:31:21.168955,2025-09-06 17:31:21 EEST,API_ERROR,APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-06T14:31:20.981784,2025-09-06 17:31:20 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-05T04:40:30.467912,2025-09-05 07:40:30 EEST,API_ERROR,APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-05T04:40:30.198892,2025-09-05 07:40:30 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-05T04:09:36.396073,2025-09-05 07:09:36 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust BNB: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
-2025-09-05T04:09:30.515143,2025-09-05 07:09:30 EEST,API_ERROR,APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-05T04:09:30.307516,2025-09-05 07:09:30 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
-2025-09-04T14:10:33.266491,2025-09-04 17:10:33 EEST,STRATEGY_CONFIRM,Strategy confirmed as ML_PURE,set_strategy,INFO,TRUE
-2025-09-03T05:04:37.752937,2025-09-03 08:04:37 EEST,TRADING_LOOP_ERROR,total_trades',trading_loop,ERROR,TRUE
-2025-09-02T19:14:52.154407,2025-09-02 22:14:52 EEST,STRATEGY_CONFIRM,Strategy confirmed as ML_PURE,set_strategy,INFO,TRUE
