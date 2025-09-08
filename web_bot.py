@@ -6550,8 +6550,24 @@ def execute_position_rebalancing():
                 
                 if result["success"]:
                     rebalancing_results["dust_liquidations"].append(result)
-                    rebalancing_results["total_freed_usdt"] += result["value"]
-                    print(f"✅ Liquidated {dust_pos['asset']}: ${result['value']:.2f}")
+                    
+                    # Handle different result structures (trading vs dust conversion)
+                    if result.get("method") == "dust_conversion":
+                        # Dust conversion result - estimate USD value from BNB
+                        bnb_value = result.get("bnb_received", 0)
+                        try:
+                            bnb_ticker = client.get_ticker(symbol='BNBUSDT')
+                            bnb_price = float(bnb_ticker['lastPrice'])
+                            estimated_usd = bnb_value * bnb_price
+                            rebalancing_results["total_freed_usdt"] += estimated_usd
+                            print(f"✅ Dust converted {dust_pos['asset']}: {bnb_value:.8f} BNB (~${estimated_usd:.2f})")
+                        except:
+                            print(f"✅ Dust converted {dust_pos['asset']}: {bnb_value:.8f} BNB")
+                    else:
+                        # Regular trading result
+                        value = result.get("value", 0)
+                        rebalancing_results["total_freed_usdt"] += value
+                        print(f"✅ Liquidated {dust_pos['asset']}: ${value:.2f}")
                 else:
                     # Check if this is a "too small" error that should be skipped
                     if result.get("skip_conversion", False):
