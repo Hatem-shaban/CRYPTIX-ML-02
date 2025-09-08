@@ -6143,13 +6143,18 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         
         # Log the trade
         log_trade_to_csv(
-            action="SELL_PARTIAL",
-            symbol=symbol,
-            quantity=sell_quantity,
-            price=avg_price,
-            value=total_value,
-            fee=total_fee,
-            additional_data={
+            {
+                'signal': 'SELL_PARTIAL',
+                'symbol': symbol,
+                'quantity': sell_quantity,
+                'price': avg_price,
+                'value': total_value,
+                'fee': total_fee,
+                'status': 'SUCCESS',
+                'order_id': result['order_id'],
+                'timestamp': format_cairo_time()
+            },
+            {
                 'percentage': percentage,
                 'reason': reason,
                 'order_type': 'partial_sell'
