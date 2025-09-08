@@ -6103,6 +6103,21 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
             step_size = float(lot_size_filter['stepSize'])
             sell_quantity = round(sell_quantity / step_size) * step_size
             
+            # Format quantity to correct precision to avoid "too much precision" error
+            # Calculate precision from step_size
+            step_size_str = f"{step_size:f}".rstrip('0').rstrip('.')
+            if '.' in step_size_str:
+                precision = len(step_size_str.split('.')[1])
+            else:
+                precision = 0
+            
+            # Round to proper precision and remove unnecessary decimal places
+            sell_quantity = round(sell_quantity, precision)
+            
+            # If precision is 0, convert to int to avoid decimal point
+            if precision == 0:
+                sell_quantity = int(sell_quantity)
+            
         # Check minimum quantity
         min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
         if sell_quantity < min_qty:
@@ -6112,7 +6127,7 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         print(f"   Symbol: {symbol}")
         print(f"   Current Balance: {current_balance:.8f} {base_asset}")
         print(f"   Sell Percentage: {percentage}%")
-        print(f"   Sell Quantity: {sell_quantity:.8f} {base_asset}")
+        print(f"   Sell Quantity: {sell_quantity} {base_asset}")  # Remove .8f formatting to show actual precision
         
         # Execute sell order
         order = client.order_market_sell(symbol=symbol, quantity=sell_quantity)
