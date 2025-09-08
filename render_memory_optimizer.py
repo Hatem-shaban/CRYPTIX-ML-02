@@ -79,7 +79,7 @@ class RenderMemoryManager:
     
     def aggressive_cleanup(self):
         """Perform aggressive memory cleanup"""
-        logger.info("🧹 Starting aggressive memory cleanup...")
+        logger.debug("🧹 Starting aggressive memory cleanup...")
         
         # Clear all caches
         self._data_cache.clear()
@@ -100,7 +100,7 @@ class RenderMemoryManager:
             pass
         
         memory_after = self.get_memory_usage()
-        logger.info(f"✅ Cleanup completed - Memory: {memory_after['rss_mb']:.1f}MB")
+        logger.debug(f"✅ Cleanup completed - Memory: {memory_after['rss_mb']:.1f}MB")
         
         return memory_after
     
@@ -254,12 +254,12 @@ class RenderMemoryManager:
         memory_stats = self.get_memory_usage()
         
         if memory_stats['is_critical']:
-            logger.warning(f"🚨 Critical memory usage: {memory_stats['rss_mb']:.1f}MB")
+            logger.debug(f"🚨 Critical memory usage: {memory_stats['rss_mb']:.1f}MB")
             self.aggressive_cleanup()
             self.limit_trading_history(3)  # More aggressive limiting
             
         elif memory_stats['is_warning']:
-            logger.info(f"⚠️ High memory usage: {memory_stats['rss_mb']:.1f}MB")
+            logger.debug(f"⚠️ High memory usage: {memory_stats['rss_mb']:.1f}MB")
             self.limit_trading_history(5)
             # Gentle cleanup
             for _ in range(2):

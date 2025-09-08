@@ -93,7 +93,7 @@ class AutoMemoryManager:
     def aggressive_cleanup(self):
         """Perform aggressive memory cleanup"""
         try:
-            logger.info("🧹 Performing aggressive memory cleanup...")
+            logger.debug("🧹 Performing aggressive memory cleanup...")
             
             # Multiple garbage collection passes
             for _ in range(3):
@@ -140,7 +140,7 @@ class AutoMemoryManager:
             gc.collect()
             
             memory_after = self.get_memory_usage_mb()
-            logger.info(f"✅ Aggressive cleanup completed - Memory: {memory_after:.1f}MB")
+            logger.debug(f"✅ Aggressive cleanup completed - Memory: {memory_after:.1f}MB")
             
         except Exception as e:
             logger.error(f"Aggressive cleanup error: {e}")
@@ -153,10 +153,10 @@ class AutoMemoryManager:
                 current_mb = self.get_memory_usage_mb()
                 
                 if self.is_memory_critical():
-                    logger.warning(f"🚨 Critical memory usage: {current_mb:.1f}MB - performing aggressive cleanup")
+                    logger.debug(f"🚨 Critical memory usage: {current_mb:.1f}MB - performing aggressive cleanup")
                     self.aggressive_cleanup()
                 elif self.is_memory_warning():
-                    logger.info(f"⚠️ High memory usage: {current_mb:.1f}MB - performing gentle cleanup")
+                    logger.debug(f"⚠️ High memory usage: {current_mb:.1f}MB - performing gentle cleanup")
                     self.gentle_cleanup()
                 else:
                     # Regular gentle cleanup

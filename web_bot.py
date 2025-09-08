@@ -4320,7 +4320,7 @@ def home():
     current_strategy = bot_status.get('trading_strategy', config.DEFAULT_STRATEGY)
     strategy_descriptions = {
         'ADAPTIVE': '🧠 Smart strategy that adapts to market conditions',
-        'ML_PURE': '🤖 Pure ML Strategy - AI-driven trading for maximum profitability (Target: 10%+ daily)'
+        'ML_PURE': '🤖 Pure ML Strategy'
     }
     strategy_desc = strategy_descriptions.get(current_strategy, '')
     

@@ -151,7 +151,7 @@ def main():
         def before_request():
             memory_stats = memory_manager.monitor_and_cleanup()
             if memory_stats['is_critical']:
-                logger.warning(f"🚨 Critical memory before request: {memory_stats['rss_mb']:.1f}MB")
+                logger.debug(f"🚨 Critical memory before request: {memory_stats['rss_mb']:.1f}MB")
         
         @app.after_request
         def after_request(response):
