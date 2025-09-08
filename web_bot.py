@@ -6037,138 +6037,280 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         return {"success": False, "error": str(e)}
 
 def liquidate_dust_position(dust_position):
-    """Liquidate a single dust position to USDT"""
+    """Smart dust liquidation: tries USDT first, falls back to BNB if notional requirements fail"""
     try:
         if not client:
             return {"success": False, "error": "Client not initialized"}
             
         asset = dust_position['asset']
-        symbol = dust_position['symbol']
+        original_symbol = dust_position['symbol']  # e.g., DOTUSDT
         quantity = dust_position['quantity']
         
         print(f"\n💨 Liquidating dust position: {asset}")
         print(f"   Quantity: {quantity:.8f} {asset}")
         print(f"   Est. Value: ${dust_position['usdt_value']:.2f}")
         
-        # Enhanced order validation for dust liquidation
+        # Smart liquidation: Try USDT first, then BNB if it fails
+        symbols_to_try = []
+        
+        # Primary: try USDT pair
+        if original_symbol.endswith('USDT'):
+            symbols_to_try.append((original_symbol, 'USDT'))
+        
+        # Fallback: try BNB pair (often has lower minimums)
+        bnb_symbol = f"{asset}BNB"
         try:
-            from order_validator import OrderValidator, log_validation_result
-            validator = OrderValidator(client)
-            
-            # Get fresh price for accurate validation
+            bnb_info = client.get_symbol_info(bnb_symbol)
+            if bnb_info and bnb_info.get('status') == 'TRADING':
+                symbols_to_try.append((bnb_symbol, 'BNB'))
+        except:
+            pass  # BNB pair not available
+        
+        if not symbols_to_try:
+            return {"success": False, "error": f"No trading pairs available for {asset}"}
+        
+        last_error = None
+        
+        # Try each symbol until one works
+        for symbol, quote_asset in symbols_to_try:
             try:
-                ticker = client.get_ticker(symbol=symbol)
-                current_price = float(ticker['lastPrice'])
-            except:
-                current_price = dust_position['price']  # Fallback to stored price
-            
-            # Pass available balance (which is the dust quantity) to validator
-            validation_result = validator.validate_order(symbol, quantity, 'SELL', current_price, quantity)
-            
-            if validation_result['is_valid']:
-                quantity = validation_result['adjusted_quantity']
-                print(f"✅ Dust position validation passed")
-                print(f"Final validated quantity: {quantity:.8f}")
+                print(f"🔄 Trying {symbol}...")
                 
-                if validation_result['warnings']:
-                    for warning in validation_result['warnings']:
-                        print(f"⚠️ {warning}")
-            else:
-                print(f"❌ Dust position validation failed:")
-                for error in validation_result['errors']:
-                    print(f"   - {error}")
-                
-                # Check if this is a fundamental issue (insufficient notional value)
-                error_str = '; '.join(validation_result['errors'])
-                if 'below minimum' in error_str.lower() or 'notional' in error_str.lower():
-                    print(f"💨 Dust position too small to liquidate: {asset} ({quantity:.8f})")
-                    return {"success": False, "error": f"Dust too small: {error_str}", "skip_conversion": True}
-                
-                # Log validation errors
-                log_validation_result(validation_result, symbol, "liquidate_dust_position")
-                
-                return {"success": False, "error": f"Validation failed: {error_str}"}
-                
-        except ImportError:
-            print("⚠️ Enhanced validation not available, using basic validation")
-            
-            # Fallback to original validation
-            symbol_info = client.get_symbol_info(symbol)
-            if not symbol_info:
-                return {"success": False, "error": f"Could not get symbol info for {symbol}"}
-                
-            # Find lot size and notional filters
-            lot_size_filter = None
-            min_notional_filter = None
-            for f in symbol_info['filters']:
-                if f['filterType'] == 'LOT_SIZE':
-                    lot_size_filter = f
-                elif f['filterType'] == 'MIN_NOTIONAL':
-                    min_notional_filter = f
-                    
-            if lot_size_filter:
-                step_size = float(lot_size_filter['stepSize'])
-                quantity = round(quantity / step_size) * step_size
-                
-            # Check minimum quantity
-            min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
-            if quantity < min_qty:
-                return {"success": False, "error": f"Quantity {quantity:.8f} below minimum {min_qty:.8f}", "skip_conversion": True}
-            
-            # Check minimum notional value with fresh price
-            if min_notional_filter:
-                # Get fresh price to ensure accurate notional calculation
+                # Enhanced order validation for dust liquidation
                 try:
-                    ticker = client.get_ticker(symbol=symbol)
-                    current_price = float(ticker['lastPrice'])
-                except:
-                    current_price = dust_position['price']  # Fallback to stored price
+                    from order_validator import OrderValidator, log_validation_result
+                    validator = OrderValidator(client)
                     
-                notional_value = quantity * current_price
-                min_notional = float(min_notional_filter['minNotional'])
-                if notional_value < min_notional:
-                    return {"success": False, "error": f"Notional value ${notional_value:.2f} below minimum ${min_notional:.2f}", "skip_conversion": True}
+                    # Get fresh price for accurate validation
+                    try:
+                        ticker = client.get_ticker(symbol=symbol)
+                        current_price = float(ticker['lastPrice'])
+                    except:
+                        # Skip this symbol if we can't get price
+                        last_error = f"Could not get price for {symbol}"
+                        continue
+                    
+                    # Pass available balance (which is the dust quantity) to validator
+                    validation_result = validator.validate_order(symbol, quantity, 'SELL', current_price, quantity)
+                    
+                    if validation_result['is_valid']:
+                        validated_quantity = validation_result['adjusted_quantity']
+                        print(f"✅ {symbol} validation passed")
+                        print(f"Final validated quantity: {validated_quantity:.8f}")
+                        
+                        if validation_result['warnings']:
+                            for warning in validation_result['warnings']:
+                                print(f"⚠️ {warning}")
+                    else:
+                        print(f"❌ {symbol} validation failed:")
+                        for error in validation_result['errors']:
+                            print(f"   - {error}")
+                        
+                        # Check if this is a notional issue that might work with different pair
+                        error_str = '; '.join(validation_result['errors'])
+                        if 'notional' in error_str.lower() or 'below minimum' in error_str.lower():
+                            last_error = f"{symbol}: {error_str}"
+                            continue  # Try next symbol
+                        else:
+                            # Different kind of error, return immediately
+                            log_validation_result(validation_result, symbol, "liquidate_dust_position")
+                            return {"success": False, "error": f"Validation failed: {error_str}"}
+                            
+                except ImportError:
+                    print("⚠️ Enhanced validation not available, using basic validation")
+                    
+                    # Fallback to original validation
+                    symbol_info = client.get_symbol_info(symbol)
+                    if not symbol_info:
+                        last_error = f"Could not get symbol info for {symbol}"
+                        continue
+                        
+                    # Find lot size and notional filters
+                    lot_size_filter = None
+                    min_notional_filter = None
+                    for f in symbol_info['filters']:
+                        if f['filterType'] == 'LOT_SIZE':
+                            lot_size_filter = f
+                        elif f['filterType'] in ['MIN_NOTIONAL', 'NOTIONAL']:
+                            min_notional_filter = f
+                            
+                    if lot_size_filter:
+                        step_size = float(lot_size_filter['stepSize'])
+                        validated_quantity = round(quantity / step_size) * step_size
+                    else:
+                        validated_quantity = quantity
+                        
+                    # Check minimum quantity
+                    min_qty = float(lot_size_filter['minQty']) if lot_size_filter else 0.001
+                    if validated_quantity < min_qty:
+                        last_error = f"{symbol}: Quantity {validated_quantity:.8f} below minimum {min_qty:.8f}"
+                        continue
+                    
+                    # Check minimum notional value with fresh price
+                    if min_notional_filter:
+                        try:
+                            ticker = client.get_ticker(symbol=symbol)
+                            current_price = float(ticker['lastPrice'])
+                        except:
+                            last_error = f"Could not get price for {symbol}"
+                            continue
+                            
+                        notional_value = validated_quantity * current_price
+                        min_notional = float(min_notional_filter['minNotional'])
+                        if notional_value < min_notional:
+                            last_error = f"{symbol}: Notional ${notional_value:.4f} below minimum ${min_notional:.2f}"
+                            continue
+                
+                # If we get here, validation passed - execute the trade
+                print(f"🎯 Executing {symbol} market sell...")
+                order = client.order_market_sell(symbol=symbol, quantity=validated_quantity)
+                
+                # Calculate order details
+                avg_price = float(order['fills'][0]['price']) if order['fills'] else 0
+                total_value = float(order['cummulativeQuoteQty'])
+                total_fee = sum([float(fill['commission']) for fill in order['fills']])
+                
+                # Handle different quote currencies
+                if quote_asset == 'BNB':
+                    print(f"✅ Dust liquidation successful to BNB!")
+                    print(f"   Received: {total_value:.8f} BNB")
+                    print(f"   Fee: {total_fee:.8f} {asset}")
+                    
+                    # Optional: Convert BNB to USDT for consistency
+                    bnb_to_usdt_result = None
+                    try:
+                        if total_value > 0.001:  # Only if we got decent BNB amount
+                            print(f"🔄 Converting {total_value:.8f} BNB to USDT...")
+                            bnb_usdt_ticker = client.get_ticker(symbol='BNBUSDT')
+                            bnb_price = float(bnb_usdt_ticker['lastPrice'])
+                            
+                            # Check if BNB amount meets BNBUSDT minimum requirements
+                            bnb_usdt_info = client.get_symbol_info('BNBUSDT')
+                            can_convert = True
+                            
+                            for f in bnb_usdt_info['filters']:
+                                if f['filterType'] in ['MIN_NOTIONAL', 'NOTIONAL']:
+                                    min_notional = float(f['minNotional'])
+                                    bnb_notional = total_value * bnb_price
+                                    if bnb_notional < min_notional:
+                                        print(f"💰 Keeping {total_value:.8f} BNB (${bnb_notional:.2f} < ${min_notional:.2f} min)")
+                                        can_convert = False
+                                        break
+                            
+                            if can_convert:
+                                bnb_order = client.order_market_sell(symbol='BNBUSDT', quantity=total_value)
+                                bnb_usdt_value = float(bnb_order['cummulativeQuoteQty'])
+                                bnb_usdt_fee = sum([float(fill['commission']) for fill in bnb_order['fills']])
+                                print(f"✅ BNB→USDT conversion successful!")
+                                print(f"   Final USDT: ${bnb_usdt_value:.2f}")
+                                
+                                bnb_to_usdt_result = {
+                                    "bnb_quantity": total_value,
+                                    "usdt_received": bnb_usdt_value,
+                                    "conversion_fee": bnb_usdt_fee
+                                }
+                    except Exception as e:
+                        print(f"⚠️ BNB→USDT conversion failed: {e}")
+                        print(f"💰 Keeping {total_value:.8f} BNB")
+                else:
+                    print(f"✅ Dust liquidation successful!")
+                    print(f"   Received: ${total_value:.2f} USDT")
+                    print(f"   Fee: ${total_fee:.4f}")
+
+                result = {
+                    "success": True,
+                    "order_id": order.get('orderId'),
+                    "asset": asset,
+                    "symbol": symbol,
+                    "quantity": validated_quantity,
+                    "price": avg_price,
+                    "value": total_value,
+                    "fee": total_fee,
+                    "quote_asset": quote_asset,
+                    "timestamp": format_cairo_time()
+                }
+                
+                # Add BNB conversion result if applicable
+                if bnb_to_usdt_result:
+                    result["bnb_conversion"] = bnb_to_usdt_result
+                
+                # Log the trade
+                log_trade_to_csv({
+                    'signal': 'LIQUIDATE_DUST',
+                    'symbol': symbol,
+                    'quantity': validated_quantity,
+                    'price': avg_price,
+                    'value': total_value,
+                    'fee': total_fee,
+                    'status': 'SUCCESS',
+                    'timestamp': format_cairo_time()
+                }, {
+                    'dust_value': dust_position['usdt_value'],
+                    'order_type': 'smart_dust_liquidation',
+                    'quote_asset': quote_asset,
+                    'bnb_conversion': bnb_to_usdt_result is not None
+                })
+                
+                return result
+                
+            except Exception as e:
+                last_error = f"{symbol} execution failed: {e}"
+                print(f"❌ {last_error}")
+                continue
         
-        # Execute market sell
-        order = client.order_market_sell(symbol=symbol, quantity=quantity)
+        # If we get here, all symbols failed
+        final_error = f"All liquidation attempts failed. Last error: {last_error}"
+        print(f"❌ {final_error}")
         
-        # Calculate order details
-        avg_price = float(order['fills'][0]['price']) if order['fills'] else 0
-        total_value = float(order['cummulativeQuoteQty'])
-        total_fee = sum([float(fill['commission']) for fill in order['fills']])
+        # Check if all failures were due to notional requirements - use dust conversion instead
+        if last_error and ('notional' in last_error.lower() or 'below minimum' in last_error.lower()):
+            print(f"💨 Dust position too small for manual trading - attempting dust conversion...")
+            
+            # Try Binance's dust conversion API as fallback
+            try:
+                # Check if asset is eligible for dust conversion
+                dust_result = client.transfer_dust(asset=asset)
+                if dust_result and dust_result.get('transferResult'):
+                    bnb_received = float(dust_result.get('totalTransfered', 0))
+                    print(f"✅ Dust conversion successful!")
+                    print(f"   {asset} → {bnb_received:.8f} BNB via dust conversion")
+                    
+                    # Log the dust conversion
+                    log_trade_to_csv({
+                        'signal': 'DUST_CONVERSION',
+                        'symbol': f'{asset}_TO_BNB',
+                        'quantity': quantity,
+                        'price': 0,
+                        'value': bnb_received,
+                        'fee': 0,
+                        'status': 'SUCCESS',
+                        'timestamp': format_cairo_time()
+                    }, {
+                        'dust_value': dust_position['usdt_value'],
+                        'order_type': 'binance_dust_conversion',
+                        'method': 'transfer_dust_api'
+                    })
+                    
+                    return {
+                        "success": True,
+                        "method": "dust_conversion",
+                        "asset": asset,
+                        "quantity": quantity,
+                        "bnb_received": bnb_received,
+                        "timestamp": format_cairo_time()
+                    }
+                else:
+                    print(f"❌ Dust conversion also failed for {asset}")
+                    return {"success": False, "error": f"Dust too small for both trading and conversion: {asset}", "skip_conversion": True}
+            except Exception as dust_error:
+                if "Insufficient balance" in str(dust_error) or "does not meet the minimum threshold" in str(dust_error):
+                    print(f"💨 {asset} dust below conversion threshold")
+                    return {"success": False, "error": f"Dust too small: {dust_error}", "skip_conversion": True}
+                else:
+                    print(f"❌ Dust conversion failed: {dust_error}")
+                    return {"success": False, "error": f"All methods failed. Trading: {final_error}, Conversion: {dust_error}"}
         
-        result = {
-            "success": True,
-            "order_id": order.get('orderId'),
-            "asset": asset,
-            "symbol": symbol,
-            "quantity": quantity,
-            "price": avg_price,
-            "value": total_value,
-            "fee": total_fee,
-            "timestamp": format_cairo_time()
-        }
-        
-        print(f"✅ Dust liquidation successful!")
-        print(f"   Received: ${total_value:.2f} USDT")
-        print(f"   Fee: ${total_fee:.4f}")
-        
-        # Log the trade
-        log_trade_to_csv({
-            'signal': 'LIQUIDATE_DUST',
-            'symbol': symbol,
-            'quantity': quantity,
-            'price': avg_price,
-            'value': total_value,
-            'fee': total_fee,
-            'status': 'SUCCESS',
-            'timestamp': format_cairo_time()
-        }, {
-            'dust_value': dust_position['usdt_value'],
-            'order_type': 'dust_liquidation'
-        })
-        
-        return result
+        return {"success": False, "error": final_error}
         
     except Exception as e:
         error_msg = f"Error liquidating dust {dust_position['asset']}: {e}"
