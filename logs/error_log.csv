@@ -5,7 +5,6 @@ timestamp,cairo_time,error_type,error_message,function_name,severity,bot_status
 2025-09-06T18:10:30.387947,2025-09-06 21:10:30 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: NOTIONAL,execute_trade,ERROR,TRUE
 2025-09-06T17:39:10.405112,2025-09-06 20:39:10 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust DOT: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
 2025-09-06T17:39:08.399089,2025-09-06 20:39:08 EEST,DUST_LIQUIDATION_ERROR,Error liquidating dust BNB: APIError(code=-1013): Filter failure: NOTIONAL,liquidate_dust_position,ERROR,TRUE
-2025-09-06T16:36:39.949689,2025-09-06 19:36:39 EEST,REBALANCING_ERROR,Error in position rebalancing: notify_market_update() missing 2 required positional arguments: 'hunting_mode' and 'next_scan_time',execute_position_rebalancing,ERROR,TRUE
 2025-09-06T14:31:21.168955,2025-09-06 17:31:21 EEST,API_ERROR,APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
 2025-09-06T14:31:20.981784,2025-09-06 17:31:20 EEST,FILTER_ERROR,API Filter Error (Code: -1013): APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
 2025-09-05T04:40:30.467912,2025-09-05 07:40:30 EEST,API_ERROR,APIError(code=-1013): Filter failure: LOT_SIZE,execute_trade,ERROR,TRUE
