@@ -133,6 +133,7 @@ class OrderValidator:
             # Get minimum from LOT_SIZE
             lot_size_filter = filters.get('LOT_SIZE', {})
             min_qty_lot = float(lot_size_filter.get('minQty', 0.001))
+            step_size = float(lot_size_filter.get('stepSize', 0.001))
             
             # Get minimum from MIN_NOTIONAL
             min_notional_filter = filters.get('MIN_NOTIONAL', {})
@@ -142,9 +143,25 @@ class OrderValidator:
             # Take the maximum to satisfy both constraints
             min_qty = max(min_qty_lot, min_qty_notional)
             
-            # Adjust to step size
-            adjusted_qty, _ = self.validate_lot_size(symbol, min_qty)
+            # Adjust to step size properly - round UP to ensure we meet minimum notional
+            from decimal import Decimal, ROUND_UP
+            decimal_qty = Decimal(str(min_qty))
+            decimal_step = Decimal(str(step_size))
+            decimal_min = Decimal(str(min_qty_lot))
             
+            # Calculate steps needed from minimum, rounding UP
+            if decimal_qty <= decimal_min:
+                adjusted_qty = float(decimal_min)
+            else:
+                steps_from_min = ((decimal_qty - decimal_min) / decimal_step).quantize(Decimal('1'), rounding=ROUND_UP)
+                adjusted_qty = float(decimal_min + (steps_from_min * decimal_step))
+            
+            # Final verification that result meets both constraints
+            final_notional = adjusted_qty * price
+            if final_notional < min_notional:
+                # Need to add one more step
+                adjusted_qty += step_size
+                
             return adjusted_qty
             
         except Exception as e:
@@ -218,23 +235,34 @@ class OrderValidator:
                     f"MIN_NOTIONAL validation failed. Order value ${current_notional:.2f} below minimum ${min_notional:.2f}"
                 )
                 
-                # For SELL orders, if we don't have enough for minimum notional, we can't trade
+                # Calculate minimum quantity needed for notional
+                min_valid_qty = self.calculate_minimum_valid_quantity(symbol, price)
+                
+                # For SELL orders, check if we have enough balance for minimum notional
                 if side.upper() == 'SELL' and available_balance is not None:
-                    max_possible_notional = available_balance * price
-                    if max_possible_notional < min_notional:
+                    if min_valid_qty > available_balance:
+                        max_possible_notional = available_balance * price
                         result['errors'].append(
-                            f"Maximum possible order value ${max_possible_notional:.2f} below minimum ${min_notional:.2f}"
+                            f"Balance insufficient for minimum notional. Have ${max_possible_notional:.2f}, need ${min_notional:.2f}"
                         )
                         return result
                 
-                # Calculate minimum quantity needed for notional (if balance allows)
-                min_qty_for_notional = min_notional / price
-                min_valid_qty = self.calculate_minimum_valid_quantity(symbol, price)
+                # We can meet minimum notional, adjust quantity
+                result['adjusted_quantity'] = min_valid_qty
+                result['warnings'].append(f"Quantity adjusted to meet minimum notional: {min_valid_qty:.8f}")
                 
-                if available_balance is None or min_valid_qty <= available_balance:
-                    result['adjusted_quantity'] = min_valid_qty
-                    result['warnings'].append(f"Quantity adjusted to meet minimum notional: {min_valid_qty:.8f}")
+                # Re-validate lot size after notional adjustment
+                final_qty, lot_valid_final = self.validate_lot_size(symbol, min_valid_qty)
+                if lot_valid_final:
+                    result['adjusted_quantity'] = final_qty
                     notional_valid = True
+                    # Double-check final notional after lot size adjustment
+                    final_notional = final_qty * price
+                    if final_notional < min_notional:
+                        result['errors'].append(f"After LOT_SIZE adjustment, still below minimum notional: ${final_notional:.2f} < ${min_notional:.2f}")
+                        notional_valid = False
+                else:
+                    result['errors'].append(f"LOT_SIZE validation failed after notional adjustment")
             
             # Final validation
             if lot_valid and notional_valid and len([e for e in result['errors'] if 'exceeds available balance' in e]) == 0:

@@ -3203,6 +3203,24 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         if validation_result['warnings']:
                             for warning in validation_result['warnings']:
                                 print(f"⚠️ {warning}")
+                                
+                        # Critical: Double-check notional compliance after all adjustments
+                        final_notional = qty * current_price
+                        min_notional_required = validation_result.get('min_notional_required', 0)
+                        if min_notional_required > 0 and final_notional < min_notional_required:
+                            print(f"❌ CRITICAL: Final quantity still fails notional check!")
+                            print(f"   Final notional: ${final_notional:.2f} < Required: ${min_notional_required:.2f}")
+                            # Force recalculation with minimum valid quantity
+                            min_valid_qty = validator.calculate_minimum_valid_quantity(symbol, current_price)
+                            if signal == "SELL" and available_balance and min_valid_qty > available_balance:
+                                print(f"❌ Cannot meet minimum notional: need {min_valid_qty:.8f}, have {available_balance:.8f}")
+                                trade_info['status'] = 'insufficient_balance'
+                                trade_info['error'] = f"Balance too small for minimum notional: ${available_balance * current_price:.2f} < ${min_notional_required:.2f}"
+                                return f"Balance too small for minimum notional: ${available_balance * current_price:.2f} < ${min_notional_required:.2f}"
+                            else:
+                                print(f"🔧 FORCED adjustment to minimum valid quantity: {min_valid_qty:.8f}")
+                                qty = min_valid_qty
+                                trade_info['forced_adjustment'] = True
                     else:
                         print(f"❌ Order validation failed:")
                         for error in validation_result['errors']:
