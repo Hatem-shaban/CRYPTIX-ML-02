@@ -6178,13 +6178,22 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         
         # Send Telegram notification if available
         if TELEGRAM_AVAILABLE:
-            notify_trade(
-                action="SELL_PARTIAL",
-                symbol=symbol,
-                quantity=sell_quantity,
-                price=avg_price,
-                additional_info=f"{percentage}% partial sell - {reason}"
-            )
+            try:
+                # Reuse the same trade_info structure for notification
+                notification_trade_info = {
+                    'signal': 'SELL_PARTIAL',
+                    'symbol': symbol,
+                    'quantity': sell_quantity,
+                    'price': avg_price,
+                    'value': total_value,
+                    'fee': total_fee,
+                    'status': 'SUCCESS',
+                    'order_id': result['order_id'],
+                    'timestamp': format_cairo_time()
+                }
+                notify_trade(notification_trade_info, is_executed=True)
+            except Exception as telegram_error:
+                print(f"Telegram partial sell notification failed: {telegram_error}")
             
         return result
         
