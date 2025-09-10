@@ -3194,6 +3194,17 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     
                     validation_result = validator.validate_order(symbol, qty, signal, current_price, available_balance)
                     
+                    # Add debugging info
+                    print(f"🔍 Validation Debug:")
+                    print(f"   Input quantity: {qty:.8f}")
+                    print(f"   Current price: ${current_price:.2f}")
+                    print(f"   Available balance: {available_balance}")
+                    print(f"   Min notional required: ${validation_result.get('min_notional_required', 0):.2f}")
+                    print(f"   Validation result: {validation_result['is_valid']}")
+                    print(f"   Adjusted quantity: {validation_result['adjusted_quantity']:.8f}")
+                    print(f"   Errors: {validation_result.get('errors', [])}")
+                    print(f"   Warnings: {validation_result.get('warnings', [])}")
+                    
                     if validation_result['is_valid']:
                         qty = validation_result['adjusted_quantity']
                         print(f"✅ Order validation passed")
@@ -3207,11 +3218,13 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         # Critical: Double-check notional compliance after all adjustments
                         final_notional = qty * current_price
                         min_notional_required = validation_result.get('min_notional_required', 0)
+                        print(f"🔍 Final notional check: ${final_notional:.2f} vs required ${min_notional_required:.2f}")
                         if min_notional_required > 0 and final_notional < min_notional_required:
                             print(f"❌ CRITICAL: Final quantity still fails notional check!")
                             print(f"   Final notional: ${final_notional:.2f} < Required: ${min_notional_required:.2f}")
                             # Force recalculation with minimum valid quantity
                             min_valid_qty = validator.calculate_minimum_valid_quantity(symbol, current_price)
+                            print(f"   Calculated minimum valid quantity: {min_valid_qty:.8f}")
                             if signal == "SELL" and available_balance and min_valid_qty > available_balance:
                                 print(f"❌ Cannot meet minimum notional: need {min_valid_qty:.8f}, have {available_balance:.8f}")
                                 trade_info['status'] = 'insufficient_balance'
