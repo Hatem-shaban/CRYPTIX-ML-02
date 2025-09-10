@@ -303,7 +303,26 @@ def validate_order_before_execution(client, symbol: str, quantity: float, side: 
     """
     try:
         validator = OrderValidator(client)
-        result = validator.validate_order(symbol, quantity, side)
+        
+        # Get current price for validation
+        current_price = float(client.get_ticker(symbol=symbol)['lastPrice'])
+        
+        # For SELL orders, get available balance
+        available_balance = None
+        if side.upper() == 'SELL':
+            base_asset = symbol.replace('USDT', '').replace('BTC', '').replace('ETH', '').replace('BNB', '')
+            if symbol.endswith('USDT'):
+                base_asset = symbol[:-4]
+            elif symbol.endswith('BTC'):
+                base_asset = symbol[:-3]
+            
+            account_info = client.get_account()
+            for balance in account_info['balances']:
+                if balance['asset'] == base_asset:
+                    available_balance = float(balance['free'])
+                    break
+        
+        result = validator.validate_order(symbol, quantity, side, current_price, available_balance)
         
         if result['is_valid']:
             return True, result['adjusted_quantity'], ""
