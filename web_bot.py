@@ -1123,6 +1123,12 @@ def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None, ava
         # 5. Ensure we don't go below the config minimum (fallback protection)
         final_minimum = max(smart_minimum, config.MIN_TRADE_USDT)
         
+        # 6. CRITICAL: Ensure final minimum meets actual notional requirements
+        # Double-check that our calculation actually meets the exchange's minimum notional
+        if final_minimum < min_notional:
+            print(f"   ⚠️ Final minimum ${final_minimum:.2f} below exchange notional ${min_notional:.2f}, adjusting")
+            final_minimum = min_notional * 1.01  # Add 1% buffer to be safe
+        
         print(f"💡 Smart minimum calculation for {symbol}:")
         print(f"   Current price: ${current_price:.4f}")
         print(f"   Min quantity: {min_qty} (worth ${min_usdt_from_qty:.2f})")
@@ -3128,20 +3134,48 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     # Use enhanced position size, but ensure it meets smart minimum requirements
                     qty = position_result['quantity']
                     
-                    # For BUY orders, ensure quantity meets smart minimum from the start
-                    if signal == "BUY":
-                        smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, available_usdt=usdt_balance)
-                        min_qty_for_smart_minimum = smart_min_trade_value / current_price
+                    # CRITICAL FIX: Ensure ALL orders (BUY and SELL) meet minimum notional requirements
+                    smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, 
+                                                                             available_usdt=usdt_balance if signal == "BUY" else None)
+                    min_qty_for_smart_minimum = smart_min_trade_value / current_price
+                    
+                    # Always check minimum quantity regardless of signal type
+                    if qty < min_qty_for_smart_minimum:
+                        print(f"   � Position size below minimum notional requirement:")
+                        print(f"   Current quantity: {qty:.8f} (${qty * current_price:.2f})")
+                        print(f"   Minimum required: {min_qty_for_smart_minimum:.8f} (${smart_min_trade_value:.2f})")
                         
-                        if qty < min_qty_for_smart_minimum:
-                            print(f"   📈 Position size too small for smart minimum (${smart_min_trade_value:.2f})")
-                            print(f"   Adjusting from {qty:.8f} to {min_qty_for_smart_minimum:.8f}")
-                            qty = min_qty_for_smart_minimum
-                            
-                            # Update position result with adjusted values
-                            position_result['quantity'] = qty
-                            position_result['risk_amount'] = qty * current_price
-                            position_result['risk_percentage'] = (qty * current_price / usdt_balance) * 100
+                        if signal == "SELL":
+                            # For SELL orders, check if we have enough balance for minimum notional
+                            has_balance, available_balance_check, _ = check_coin_balance(symbol)
+                            if has_balance and available_balance_check >= min_qty_for_smart_minimum:
+                                print(f"   ✅ Sufficient balance for minimum notional, adjusting quantity")
+                                qty = min_qty_for_smart_minimum
+                            else:
+                                print(f"   ❌ Insufficient balance for minimum notional:")
+                                print(f"   Available: {available_balance_check:.8f} (${available_balance_check * current_price:.2f})")
+                                print(f"   Required: {min_qty_for_smart_minimum:.8f} (${smart_min_trade_value:.2f})")
+                                trade_info['status'] = 'insufficient_balance_for_notional'
+                                trade_info['error'] = f"Balance ${available_balance_check * current_price:.2f} insufficient for minimum notional ${smart_min_trade_value:.2f}"
+                                return f"Insufficient balance for minimum order: need ${smart_min_trade_value:.2f}, have ${available_balance_check * current_price:.2f}"
+                        else:  # BUY order
+                            if usdt_balance >= smart_min_trade_value:
+                                print(f"   ✅ Sufficient USDT for minimum notional, adjusting quantity")
+                                qty = min_qty_for_smart_minimum
+                            else:
+                                print(f"   ❌ Insufficient USDT for minimum notional:")
+                                print(f"   Available: ${usdt_balance:.2f}")
+                                print(f"   Required: ${smart_min_trade_value:.2f}")
+                                trade_info['status'] = 'insufficient_usdt_for_notional'
+                                trade_info['error'] = f"USDT balance ${usdt_balance:.2f} insufficient for minimum notional ${smart_min_trade_value:.2f}"
+                                return f"Insufficient USDT for minimum order: need ${smart_min_trade_value:.2f}, have ${usdt_balance:.2f}"
+                        
+                        # Update position result with adjusted values
+                        position_result['quantity'] = qty
+                        position_result['risk_amount'] = qty * current_price
+                        position_result['risk_percentage'] = (qty * current_price / usdt_balance) * 100
+                        
+                    print(f"   ✅ Position size meets minimum notional requirements")
                     
                     print(f"\n📊 Enhanced Position Sizing Results:")
                     print(f"   Optimal Quantity: {qty:.8f}")
@@ -3164,14 +3198,45 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     qty = risk_amount / current_price
                     print(f"   Falling back to basic position sizing: {qty:.8f}")
             else:
-                # Original basic calculation
+                # Original basic calculation with minimum notional enforcement
                 risk_amount = usdt_balance * (config.RISK_PERCENTAGE / 100)
                 print(f"Risk amount ({config.RISK_PERCENTAGE}% of balance): {risk_amount} USDT")
                 
                 # Calculate quantity based on risk amount and current price
                 raw_qty = risk_amount / current_price
                 print(f"Raw quantity (before adjustments): {raw_qty}")
-                qty = raw_qty
+                
+                # CRITICAL FIX: Ensure basic calculation also meets minimum notional
+                smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, 
+                                                                         available_usdt=usdt_balance if signal == "BUY" else None)
+                min_qty_for_smart_minimum = smart_min_trade_value / current_price
+                
+                if raw_qty < min_qty_for_smart_minimum:
+                    print(f"   💡 Basic position size below minimum notional requirement:")
+                    print(f"   Raw quantity: {raw_qty:.8f} (${raw_qty * current_price:.2f})")
+                    print(f"   Minimum required: {min_qty_for_smart_minimum:.8f} (${smart_min_trade_value:.2f})")
+                    
+                    if signal == "SELL":
+                        # Check if we have enough balance for minimum notional
+                        has_balance, available_balance_check, _ = check_coin_balance(symbol)
+                        if has_balance and available_balance_check >= min_qty_for_smart_minimum:
+                            print(f"   ✅ Adjusting to minimum notional quantity")
+                            qty = min_qty_for_smart_minimum
+                        else:
+                            print(f"   ❌ Insufficient balance for minimum notional - skipping trade")
+                            trade_info['status'] = 'insufficient_balance_for_notional'
+                            return f"Insufficient balance for minimum order: need ${smart_min_trade_value:.2f}"
+                    else:  # BUY order
+                        if usdt_balance >= smart_min_trade_value:
+                            print(f"   ✅ Adjusting to minimum notional quantity")
+                            qty = min_qty_for_smart_minimum
+                        else:
+                            print(f"   ❌ Insufficient USDT for minimum notional - skipping trade")
+                            trade_info['status'] = 'insufficient_usdt_for_notional'
+                            return f"Insufficient USDT for minimum order: need ${smart_min_trade_value:.2f}"
+                else:
+                    qty = raw_qty
+                    print(f"   ✅ Basic position size meets minimum notional requirements")
             
             if symbol_info:
                 print("\n=== Enhanced Order Validation ===")
