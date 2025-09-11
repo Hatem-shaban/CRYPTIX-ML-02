@@ -6306,6 +6306,51 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         if sell_quantity < min_qty:
             return {"success": False, "error": f"Quantity {sell_quantity} below minimum {min_qty}"}
             
+        # CRITICAL: Check minimum notional requirement  
+        try:
+            current_price = float(client.get_ticker(symbol=symbol)['lastPrice'])
+            order_value = sell_quantity * current_price
+            
+            # Get minimum notional from symbol filters
+            min_notional = 10.0  # Default Binance minimum
+            for f in symbol_info['filters']:
+                if f['filterType'] == 'MIN_NOTIONAL':
+                    min_notional = float(f['minNotional'])
+                    break
+            
+            print(f"   Order value check: ${order_value:.2f} vs minimum ${min_notional:.2f}")
+            
+            if order_value < min_notional:
+                print(f"   ❌ Order value ${order_value:.2f} below minimum notional ${min_notional:.2f}")
+                # Try to increase quantity to meet minimum notional
+                required_qty = min_notional / current_price
+                
+                if required_qty <= current_balance:
+                    print(f"   🔧 Adjusting quantity to meet minimum notional: {required_qty:.8f}")
+                    sell_quantity = required_qty
+                    
+                    # Re-adjust for step size if needed
+                    if lot_size_filter:
+                        step_size = float(lot_size_filter['stepSize'])
+                        sell_quantity = round(sell_quantity / step_size) * step_size
+                        sell_quantity = round(sell_quantity, precision)
+                        
+                        # Final check after step size adjustment
+                        final_value = sell_quantity * current_price
+                        if final_value < min_notional:
+                            return {"success": False, "error": f"Cannot meet minimum notional: max possible ${current_balance * current_price:.2f} < required ${min_notional:.2f}"}
+                        
+                    print(f"   ✅ Adjusted quantity: {sell_quantity:.8f} (${sell_quantity * current_price:.2f})")
+                else:
+                    max_possible_value = current_balance * current_price
+                    return {"success": False, "error": f"Insufficient balance for minimum notional: have ${max_possible_value:.2f}, need ${min_notional:.2f}"}
+            else:
+                print(f"   ✅ Order value meets minimum notional requirement")
+                
+        except Exception as e:
+            print(f"   ⚠️ Could not verify notional requirement: {e}")
+            # Continue with original logic if price check fails
+            
         print(f"\n🎯 Partial Sell Order - {reason}")
         print(f"   Symbol: {symbol}")
         print(f"   Current Balance: {current_balance:.8f} {base_asset}")
