@@ -1149,6 +1149,68 @@ def calculate_smart_minimum_trade_usdt(symbol="BTCUSDT", current_price=None, ava
         print(f"❌ {error_msg}")
         return config.MIN_TRADE_USDT  # Safe fallback
 
+def format_quantity_for_binance(quantity: float, step_size: float = None) -> str:
+    """
+    Format quantity to avoid scientific notation and ensure proper precision for Binance API
+    
+    Args:
+        quantity: The quantity to format
+        step_size: Optional step size to determine precision
+        
+    Returns:
+        String representation of quantity without scientific notation
+    """
+    try:
+        # Handle very small numbers that might become scientific notation
+        if quantity == 0:
+            return "0"
+        
+        # Determine precision based on step size if provided
+        if step_size is not None and step_size > 0:
+            # Calculate decimal places from step size
+            step_str = f"{step_size:.20f}".rstrip('0').rstrip('.')
+            if '.' in step_str:
+                precision = len(step_str.split('.')[1])
+            else:
+                precision = 0
+            
+            # Format with calculated precision, but limit to reasonable max
+            max_precision = min(precision, 8)  # Limit to 8 decimal places max
+            formatted = f"{quantity:.{max_precision}f}"
+        else:
+            # For cases without step size, use appropriate precision based on magnitude
+            if quantity >= 1:
+                formatted = f"{quantity:.8f}".rstrip('0').rstrip('.')
+            elif quantity >= 0.01:
+                formatted = f"{quantity:.8f}"
+            elif quantity >= 0.0001:
+                formatted = f"{quantity:.8f}"
+            else:
+                # For very small quantities, use fixed notation with enough precision
+                formatted = f"{quantity:.8f}"
+        
+        # Ensure no scientific notation
+        if 'e' in formatted.lower():
+            # Convert scientific notation to fixed notation
+            formatted = f"{float(formatted):.20f}".rstrip('0').rstrip('.')
+        
+        # Clean up trailing zeros for readability (but keep at least one decimal for very small numbers)
+        if '.' in formatted and not step_size:
+            formatted = formatted.rstrip('0').rstrip('.')
+            
+        # Final validation - ensure it's a valid decimal
+        try:
+            float(formatted)
+            return formatted
+        except ValueError:
+            # Fallback to simple formatting
+            return f"{float(quantity):.8f}".rstrip('0').rstrip('.')
+            
+    except Exception as e:
+        print(f"Error formatting quantity {quantity}: {e}")
+        # Safe fallback
+        return f"{float(quantity):.8f}".rstrip('0').rstrip('.')
+
 def calculate_rsi(prices, period=None):
     """Calculate RSI using proper Wilder's smoothing method"""
     period = period or config.RSI_PERIOD
@@ -3477,6 +3539,10 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         print("\n=== Trade Execution ===")
         if signal == "BUY":
             print("Processing BUY order...")
+            
+            # Extract base asset from symbol (e.g., "BTC" from "BTCUSDT")  
+            base_asset = symbol[:-4] if symbol.endswith('USDT') else symbol.split(symbol_info['quoteAsset'])[0]
+            
             account_info = client.get_account()
 
             # Debug: Print all balances to see what we're getting
@@ -3515,7 +3581,18 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 log_error_to_csv(f"Insufficient USDT for buy: {usdt} < {smart_minimum}", "BALANCE_ERROR", "execute_trade", "WARNING")
                 return f"Insufficient USDT: {usdt:.2f} < {smart_minimum:.2f}"
 
-            order = client.order_market_buy(symbol=symbol, quantity=qty)
+            # Get step size for proper quantity formatting
+            step_size = None
+            if symbol_info:
+                lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                if lot_size_filter:
+                    step_size = float(lot_size_filter['stepSize'])
+            
+            # Format quantity properly to avoid scientific notation
+            formatted_qty = format_quantity_for_binance(qty, step_size)
+            print(f"🚀 Placing market buy order: {formatted_qty} {base_asset} (formatted from {qty})")
+            
+            order = client.order_market_buy(symbol=symbol, quantity=formatted_qty)
             trade_info['price'] = float(order['fills'][0]['price']) if order['fills'] else 0
             trade_info['value'] = float(order['cummulativeQuoteQty'])
             trade_info['fee'] = sum([float(fill['commission']) for fill in order['fills']])
@@ -3541,8 +3618,18 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 bot_status['trading_summary']['failed_trades'] += 1
                 return "Cannot place SELL order: quantity too small"
 
-            print(f"🚀 Placing market sell order: {qty} {base_asset}")
-            order = client.order_market_sell(symbol=symbol, quantity=qty)
+            # Get step size for proper quantity formatting
+            step_size = None
+            if symbol_info:
+                lot_size_filter = next((f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+                if lot_size_filter:
+                    step_size = float(lot_size_filter['stepSize'])
+            
+            # Format quantity properly to avoid scientific notation
+            formatted_qty = format_quantity_for_binance(qty, step_size)
+            print(f"🚀 Placing market sell order: {formatted_qty} {base_asset} (formatted from {qty})")
+            
+            order = client.order_market_sell(symbol=symbol, quantity=formatted_qty)
             trade_info['price'] = float(order['fills'][0]['price']) if order['fills'] else 0
             trade_info['value'] = float(order['cummulativeQuoteQty'])
             trade_info['fee'] = sum([float(fill['commission']) for fill in order['fills']])
@@ -6225,8 +6312,12 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
         print(f"   Sell Percentage: {percentage}%")
         print(f"   Sell Quantity: {sell_quantity} {base_asset}")  # Remove .8f formatting to show actual precision
         
+        # Format quantity properly to avoid scientific notation
+        formatted_qty = format_quantity_for_binance(sell_quantity, step_size)
+        print(f"   Formatted quantity for API: {formatted_qty}")
+        
         # Execute sell order
-        order = client.order_market_sell(symbol=symbol, quantity=sell_quantity)
+        order = client.order_market_sell(symbol=symbol, quantity=formatted_qty)
         
         # Calculate order details
         avg_price = float(order['fills'][0]['price']) if order['fills'] else 0
@@ -6426,7 +6517,13 @@ def liquidate_dust_position(dust_position):
                 
                 # If we get here, validation passed - execute the trade
                 print(f"🎯 Executing {symbol} market sell...")
-                order = client.order_market_sell(symbol=symbol, quantity=validated_quantity)
+                
+                # Format quantity properly
+                step_size = float(lot_size_filter['stepSize']) if lot_size_filter else None
+                formatted_qty = format_quantity_for_binance(validated_quantity, step_size)
+                print(f"   Formatted quantity: {formatted_qty} (from {validated_quantity})")
+                
+                order = client.order_market_sell(symbol=symbol, quantity=formatted_qty)
                 
                 # Calculate order details
                 avg_price = float(order['fills'][0]['price']) if order['fills'] else 0
@@ -6461,7 +6558,9 @@ def liquidate_dust_position(dust_position):
                                         break
                             
                             if can_convert:
-                                bnb_order = client.order_market_sell(symbol='BNBUSDT', quantity=total_value)
+                                # Format BNB quantity properly
+                                formatted_bnb_qty = format_quantity_for_binance(total_value)
+                                bnb_order = client.order_market_sell(symbol='BNBUSDT', quantity=formatted_bnb_qty)
                                 bnb_usdt_value = float(bnb_order['cummulativeQuoteQty'])
                                 bnb_usdt_fee = sum([float(fill['commission']) for fill in bnb_order['fills']])
                                 print(f"✅ BNB→USDT conversion successful!")
