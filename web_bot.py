@@ -7035,9 +7035,12 @@ def execute_position_rebalancing():
                 # Use telegram notifier directly for rebalancing notifications
                 from telegram_notify import telegram_notifier
                 
-                # Send as a trade notification instead of market update
-                telegram_notifier.send_message(summary_msg)
-                print("📱 Rebalancing summary sent via Telegram")
+                # Send rebalancing notification using the proper send_message method
+                success = telegram_notifier.send_message(summary_msg)
+                if success:
+                    print("📱 Rebalancing summary sent via Telegram")
+                else:
+                    print("⚠️ Telegram notification was queued or failed (check connection)")
                 
             except Exception as telegram_error:
                 print(f"⚠️ Telegram notification failed: {telegram_error}")

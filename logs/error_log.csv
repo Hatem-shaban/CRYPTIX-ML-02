@@ -1,2 +1,1 @@
 timestamp,cairo_time,error_type,error_message,function_name,severity,bot_status
-2025-09-09T09:14:29.793320,2025-09-09 12:14:29 EEST,STRATEGY_CONFIRM,Strategy confirmed as ML_PURE,set_strategy,INFO,FALSE
