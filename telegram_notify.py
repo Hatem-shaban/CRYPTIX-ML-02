@@ -179,6 +179,10 @@ class TelegramNotifier:
             return False
         return True
 
+    def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
+        """Public method to send message to Telegram"""
+        return self._send_message(message, parse_mode)
+
     def _send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
         """Send message to Telegram with error handling and rate limiting"""
         if not self.enabled or not self.bot_token or not self.chat_id:
@@ -596,6 +600,10 @@ def notify_trade(trade_info: Dict[str, Any], is_executed: bool = True) -> bool:
 def notify_error(error_msg: str, error_type: str = "ERROR", function_name: str = "", severity: str = "ERROR") -> bool:
     """Send error notification"""
     return telegram_notifier.send_error_notification(error_msg, error_type, function_name, severity)
+
+def send_message(message: str, parse_mode: str = 'HTML') -> bool:
+    """Send custom message to Telegram"""
+    return telegram_notifier.send_message(message, parse_mode)
 
 def notify_bot_status(status: str, additional_info: str = "") -> bool:
     """Send bot status notification"""
