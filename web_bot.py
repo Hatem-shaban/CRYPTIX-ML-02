@@ -6520,6 +6520,22 @@ def liquidate_dust_position(dust_position):
             try:
                 print(f"🔄 Trying {symbol}...")
                 
+                # Initialize variables for proper scope
+                lot_size_filter = None
+                validated_quantity = quantity
+                
+                # Get symbol info for filters (needed regardless of validation method)
+                symbol_info = client.get_symbol_info(symbol)
+                if not symbol_info:
+                    last_error = f"Could not get symbol info for {symbol}"
+                    continue
+                    
+                # Find lot size filter (needed for quantity formatting)
+                for f in symbol_info['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        lot_size_filter = f
+                        break
+                
                 # Enhanced order validation for dust liquidation
                 try:
                     from order_validator import OrderValidator, log_validation_result
@@ -6563,20 +6579,12 @@ def liquidate_dust_position(dust_position):
                 except ImportError:
                     print("⚠️ Enhanced validation not available, using basic validation")
                     
-                    # Fallback to original validation
-                    symbol_info = client.get_symbol_info(symbol)
-                    if not symbol_info:
-                        last_error = f"Could not get symbol info for {symbol}"
-                        continue
-                        
-                    # Find lot size and notional filters
-                    lot_size_filter = None
+                    # Find notional filter (lot_size_filter already found above)
                     min_notional_filter = None
                     for f in symbol_info['filters']:
-                        if f['filterType'] == 'LOT_SIZE':
-                            lot_size_filter = f
-                        elif f['filterType'] in ['MIN_NOTIONAL', 'NOTIONAL']:
+                        if f['filterType'] in ['MIN_NOTIONAL', 'NOTIONAL']:
                             min_notional_filter = f
+                            break
                             
                     if lot_size_filter:
                         step_size = float(lot_size_filter['stepSize'])
