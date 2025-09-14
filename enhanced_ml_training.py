@@ -82,7 +82,7 @@ class EnhancedMLTrainer:
     def fetch_fresh_training_data(self, days_back: int = 90, force_refresh: bool = False, 
                                 incremental: bool = True) -> pd.DataFrame:
         """
-        Fetch training data with smart incremental loading
+        Fetch training data with smart incremental loading and better freshness detection
         
         Args:
             days_back: Number of days of historical data to fetch (reduced default)
@@ -96,20 +96,41 @@ class EnhancedMLTrainer:
         data_files = [f for f in os.listdir('logs') if f.startswith('ml_training_data_') and f.endswith('.csv')]
         
         if not force_refresh and data_files:
-            # Use most recent file if it's less than 4 hours old (more frequent updates)
+            # Use most recent file
             latest_file = max(data_files)
             file_path = os.path.join('logs', latest_file)
             file_time = os.path.getmtime(file_path)
+            hours_old = (datetime.now().timestamp() - file_time) / 3600
             
-            if (datetime.now().timestamp() - file_time) < 4 * 3600:  # Less than 4 hours
-                logger.info(f"📥 Using recent training data: {latest_file}")
+            # If file is less than 2 hours old, use it
+            if hours_old < 2:
+                logger.info(f"📥 Using recent training data: {latest_file} ({hours_old:.1f}h old)")
                 return pd.read_csv(file_path)
             
-            # For incremental mode, try to update existing data
-            elif incremental:
-                logger.info(f"🔄 Attempting incremental update from: {latest_file}")
+            # If file is less than 24 hours old and incremental mode, try incremental update
+            elif hours_old < 24 and incremental:
+                logger.info(f"🔄 Attempting incremental update from: {latest_file} ({hours_old:.1f}h old)")
                 existing_df = pd.read_csv(file_path)
-                return self._fetch_incremental_update(existing_df, days_back)
+                
+                # Check if data is actually stale by looking at the data period
+                if 'timestamp' in existing_df.columns:
+                    try:
+                        latest_data_time = pd.to_datetime(existing_df['timestamp']).max()
+                        hours_since_data = (datetime.now() - latest_data_time).total_seconds() / 3600
+                        
+                        # If data is more than 12 hours old, force fresh fetch
+                        if hours_since_data > 12:
+                            logger.info(f"⚠️ Data is {hours_since_data:.1f}h old, forcing fresh fetch")
+                            force_refresh = True
+                        else:
+                            return self._fetch_incremental_update(existing_df, days_back)
+                    except Exception as e:
+                        logger.warning(f"Error checking data freshness: {e}")
+                        force_refresh = True
+            else:
+                # File is too old, force fresh fetch
+                logger.info(f"⚠️ File is {hours_old:.1f}h old, forcing fresh fetch")
+                force_refresh = True
         
         # Fetch fresh data
         if ENHANCED_DATA_AVAILABLE:
@@ -123,6 +144,10 @@ class EnhancedMLTrainer:
                 filename = f"logs/ml_training_data_{timestamp}.csv"
                 fetcher.save_training_data(df, filename)
                 logger.info(f"✅ Fresh training data saved: {filename}")
+                
+                # Clean up old data files (keep last 3)
+                self._cleanup_old_data_files()
+                
                 return df
             else:
                 logger.error("❌ Failed to fetch fresh data")
@@ -131,45 +156,82 @@ class EnhancedMLTrainer:
             logger.warning("⚠️ Enhanced data fetcher not available, using fallback")
             return self.load_fallback_data()
 
+    def _cleanup_old_data_files(self):
+        """Clean up old training data files, keeping only the last 3"""
+        try:
+            data_files = [f for f in os.listdir('logs') if f.startswith('ml_training_data_') and f.endswith('.csv')]
+            if len(data_files) > 3:
+                # Sort by modification time and remove oldest
+                file_times = [(f, os.path.getmtime(os.path.join('logs', f))) for f in data_files]
+                file_times.sort(key=lambda x: x[1], reverse=True)
+                
+                for file_name, _ in file_times[3:]:  # Keep only the newest 3
+                    try:
+                        os.remove(os.path.join('logs', file_name))
+                        logger.info(f"🗑️ Cleaned up old data file: {file_name}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove {file_name}: {e}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up old files: {e}")
+
     def _fetch_incremental_update(self, existing_df: pd.DataFrame, days_back: int) -> pd.DataFrame:
-        """Fetch incremental updates to existing training data"""
+        """Fetch incremental updates to existing training data with better error handling"""
         try:
             if ENHANCED_DATA_AVAILABLE:
                 fetcher = EnhancedHistoricalDataFetcher()
+                
+                # Check if we have timestamp column
+                if 'timestamp' not in existing_df.columns:
+                    logger.warning("⚠️ No timestamp column in existing data, fetching fresh")
+                    return fetcher.fetch_comprehensive_data(days_back=days_back)
+                
+                # Check how old the existing data is
+                latest_data_time = pd.to_datetime(existing_df['timestamp']).max()
+                hours_since_data = (datetime.now() - latest_data_time).total_seconds() / 3600
+                
+                # If data is more than 7 days old, fetch fresh
+                if hours_since_data > 168:  # 7 days
+                    logger.info(f"🔄 Data is {hours_since_data/24:.1f} days old, fetching fresh data")
+                    return fetcher.fetch_comprehensive_data(days_back=days_back)
                 
                 # Use incremental fetch for each symbol/timeframe combination
                 updated_data = []
                 symbols_processed = set()
                 
-                for _, row in existing_df.groupby(['symbol', 'timeframe']).first().iterrows():
-                    symbol = row['symbol']
-                    timeframe = row['timeframe']
-                    
-                    if f"{symbol}_{timeframe}" not in symbols_processed:
-                        # Get existing data for this symbol/timeframe
-                        existing_subset = existing_df[
-                            (existing_df['symbol'] == symbol) & 
-                            (existing_df['timeframe'] == timeframe)
-                        ].copy()
-                        
-                        # Fetch incremental data
-                        updated_subset = fetcher.fetch_incremental_data(
-                            symbol, timeframe, existing_subset
-                        )
-                        
-                        if not updated_subset.empty:
-                            updated_data.append(updated_subset)
-                        
-                        symbols_processed.add(f"{symbol}_{timeframe}")
+                # Process unique symbol/timeframe combinations
+                if 'symbol' in existing_df.columns and 'timeframe' in existing_df.columns:
+                    for (symbol, timeframe), group in existing_df.groupby(['symbol', 'timeframe']):
+                        combo_key = f"{symbol}_{timeframe}"
+                        if combo_key not in symbols_processed:
+                            # Fetch incremental data for this combination
+                            updated_subset = fetcher.fetch_incremental_data(
+                                symbol, timeframe, group
+                            )
+                            
+                            if not updated_subset.empty and len(updated_subset) > len(group):
+                                updated_data.append(updated_subset)
+                                logger.info(f"📈 Updated {symbol} {timeframe}: {len(updated_subset)} records")
+                            else:
+                                updated_data.append(group)  # Use existing if no new data
+                            
+                            symbols_processed.add(combo_key)
+                else:
+                    # Fallback: fetch fresh data if structure is unclear
+                    logger.warning("⚠️ Unclear data structure, fetching fresh")
+                    return fetcher.fetch_comprehensive_data(days_back=days_back)
                 
                 if updated_data:
                     combined_df = pd.concat(updated_data, ignore_index=True)
                     
                     # Save incremental update
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"logs/ml_training_data_incremental_{timestamp}.csv"
+                    filename = f"logs/ml_training_data_{timestamp}.csv"
                     fetcher.save_training_data(combined_df, filename)
                     logger.info(f"✅ Incremental training data saved: {filename}")
+                    
+                    # Clean up old files
+                    self._cleanup_old_data_files()
+                    
                     return combined_df
                 
             # Fallback to existing data if incremental fails
@@ -178,6 +240,16 @@ class EnhancedMLTrainer:
             
         except Exception as e:
             logger.error(f"Error in incremental update: {e}")
+            logger.info("🔄 Falling back to fresh data fetch")
+            
+            # If incremental fails, try fresh fetch
+            if ENHANCED_DATA_AVAILABLE:
+                try:
+                    fetcher = EnhancedHistoricalDataFetcher()
+                    return fetcher.fetch_comprehensive_data(days_back=days_back)
+                except Exception as e2:
+                    logger.error(f"Fresh fetch also failed: {e2}")
+            
             return existing_df
     
     def load_fallback_data(self) -> pd.DataFrame:
