@@ -6191,8 +6191,8 @@ def get_position_rsi(symbol, period=14):
         print(f"❌ Error calculating RSI for {symbol}: {e}")
         return None
 
-def detect_dust_positions(min_usdt_value=5.0):
-    """Detect small positions that should be liquidated to USDT"""
+def detect_dust_positions(min_usdt_value=None):
+    """Detect small positions that should be liquidated to USDT using smart minimum calculation"""
     try:
         if not client:
             return []
@@ -6200,7 +6200,16 @@ def detect_dust_positions(min_usdt_value=5.0):
         account_info = client.get_account()
         dust_positions = []
         
-        print(f"\n🔍 Scanning for dust positions (< ${min_usdt_value:.2f})...")
+        # Import OrderValidator for smart minimum calculation
+        try:
+            from order_validator import OrderValidator
+            validator = OrderValidator(client)
+            use_smart_detection = True
+            print(f"\n🔍 Scanning for dust positions using smart minimum notional requirements...")
+        except ImportError:
+            use_smart_detection = False
+            fallback_min = min_usdt_value or 5.0
+            print(f"\n🔍 Scanning for dust positions (< ${fallback_min:.2f}) - OrderValidator not available...")
         
         for balance in account_info['balances']:
             asset = balance['asset']
@@ -6215,29 +6224,65 @@ def detect_dust_positions(min_usdt_value=5.0):
             if free_balance <= 0:
                 continue
                 
-            # Try to get USDT value
+            # Try to get USDT value and calculate minimum requirements
             usdt_value = 0
+            is_dust = False
+            
             try:
-                if asset in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOT']:
-                    ticker = client.get_ticker(symbol=f"{asset}USDT")
+                if asset in ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'ATOM', 'XLM', 'VET', 'FIL', 'TRX', 'ETC', 'LTC', 'BCH', 'EOS', 'XTZ', 'NEO', 'DASH', 'ZEC', 'QTUM', 'ONT', 'BAT', 'ZIL', 'RVN', 'DOGE', 'SHIB']:
+                    symbol = f"{asset}USDT"
+                    ticker = client.get_ticker(symbol=symbol)
                     price = float(ticker['lastPrice'])
                     usdt_value = free_balance * price
                     
-                    if 0 < usdt_value < min_usdt_value:
+                    # Skip if position has zero value
+                    if usdt_value <= 0:
+                        continue
+                    
+                    # Determine if this is dust using smart detection or fallback
+                    if use_smart_detection:
+                        try:
+                            # Calculate the minimum sellable quantity for this symbol
+                            min_sellable_qty = validator.calculate_minimum_valid_quantity(symbol, price)
+                            min_sellable_value = min_sellable_qty * price
+                            
+                            # Position is dust if current value is below minimum sellable value
+                            is_dust = usdt_value < min_sellable_value
+                            
+                            if is_dust:
+                                print(f"   💨 {asset}: {free_balance:.8f} (~${usdt_value:.2f}) < MIN ${min_sellable_value:.2f}")
+                            elif usdt_value < 20.0:  # Log assets close to dust threshold for visibility
+                                print(f"   ✅ {asset}: {free_balance:.8f} (~${usdt_value:.2f}) ≥ MIN ${min_sellable_value:.2f}")
+                                
+                        except Exception as smart_error:
+                            # Fallback to hardcoded minimum if smart detection fails
+                            fallback_min = min_usdt_value or 5.0
+                            is_dust = usdt_value < fallback_min
+                            print(f"   ⚠️ {asset}: Smart detection failed ({smart_error}), using fallback ${fallback_min:.2f}")
+                            if is_dust:
+                                print(f"   💨 {asset}: {free_balance:.8f} (~${usdt_value:.2f}) < FALLBACK ${fallback_min:.2f}")
+                    else:
+                        # Use fallback threshold
+                        fallback_min = min_usdt_value or 5.0
+                        is_dust = usdt_value < fallback_min
+                        if is_dust:
+                            print(f"   � {asset}: {free_balance:.8f} (~${usdt_value:.2f}) < ${fallback_min:.2f}")
+                    
+                    if is_dust:
                         # Special handling for BNB - it's the target for dust conversion, so skip manual liquidation
                         if asset == 'BNB':
-                            print(f"   💰 {asset}: {free_balance:.8f} (~${usdt_value:.2f}) - BNB dust (skip manual liquidation)")
+                            print(f"   💰 {asset}: BNB dust (skip manual liquidation - used for dust conversion)")
                             continue
                             
                         dust_positions.append({
                             'asset': asset,
-                            'symbol': f"{asset}USDT",
+                            'symbol': symbol,
                             'quantity': free_balance,
                             'total_quantity': total_balance,
                             'usdt_value': usdt_value,
                             'price': price
                         })
-                        print(f"   💨 {asset}: {free_balance:.8f} (~${usdt_value:.2f})")
+                        
             except Exception as e:
                 print(f"   ⚠️ Could not check {asset}: {e}")
                 continue
@@ -6946,8 +6991,8 @@ def execute_position_rebalancing():
             else:
                 print(f"✅ {asset} RSI: {asset_rsi:.1f} < {rsi_threshold} - Within normal range")
             
-        # 2. Detect and liquidate dust positions (excluding BNB which is dust conversion target)
-        dust_positions = detect_dust_positions(min_usdt_value=5.0)
+        # 2. Detect and liquidate dust positions using smart minimum calculation
+        dust_positions = detect_dust_positions()  # No hardcoded minimum - uses smart MIN_NOTIONAL calculation
         
         if dust_positions:
             print(f"\n💨 Found {len(dust_positions)} dust positions to liquidate")
