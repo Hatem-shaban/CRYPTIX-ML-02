@@ -3687,15 +3687,52 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
             balance_before = balance_after = 0
             if client:
                 account = client.get_account()
-                # More robust balance extraction for logging
+                # Calculate TOTAL portfolio value (USDT + all crypto positions)
+                total_portfolio_value = 0
                 usdt_balance = 0
-                btc_balance = 0
+                
                 for balance in account['balances']:
-                    if balance['asset'] == 'USDT':
-                        usdt_balance = float(balance['free'])
-                    elif balance['asset'] == 'BTC':
-                        btc_balance = float(balance['free'])
-                balance_after = usdt_balance + (btc_balance * trade_info['price'])
+                    asset = balance['asset']
+                    free_qty = float(balance['free'])
+                    locked_qty = float(balance['locked'])
+                    total_qty = free_qty + locked_qty
+                    
+                    if total_qty > 0:
+                        if asset == 'USDT':
+                            usdt_balance = total_qty
+                            total_portfolio_value += total_qty
+                        else:
+                            # Get current price for this asset
+                            try:
+                                ticker = client.get_symbol_ticker(symbol=f"{asset}USDT")
+                                asset_price = float(ticker['price'])
+                                asset_value = total_qty * asset_price
+                                total_portfolio_value += asset_value
+                                print(f"📊 Portfolio: {total_qty:.8f} {asset} @ ${asset_price:.4f} = ${asset_value:.2f}")
+                            except:
+                                # If price fetch fails, skip this asset
+                                pass
+                
+                balance_after = total_portfolio_value
+                print(f"💰 Total Portfolio Value: ${total_portfolio_value:.2f} (USDT: ${usdt_balance:.2f})")
+
+            # Calculate real profit/loss using portfolio tracker
+            try:
+                from portfolio_tracker import get_portfolio_tracker
+                portfolio_tracker = get_portfolio_tracker()
+                
+                # Set starting balance if not set (user said they started with $100)
+                if portfolio_tracker.data['starting_balance'] is None:
+                    portfolio_tracker.set_starting_balance(100.0)
+                
+                # Calculate real P&L based on total portfolio change
+                real_pnl = portfolio_tracker.update_balance(balance_after)
+                
+                print(f"📊 Real P&L: ${real_pnl:.2f} (Portfolio: ${balance_after:.2f} - Starting: $100.00)")
+                
+            except Exception as e:
+                print(f"⚠️ Portfolio tracking failed: {e}")
+                real_pnl = 0
 
             additional_data = {
                 'rsi': bot_status.get('rsi', 50),
@@ -3703,7 +3740,7 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 'sentiment': bot_status.get('sentiment', 'neutral'),
                 'balance_before': balance_before,
                 'balance_after': balance_after,
-                'profit_loss': (revenue if (signal == "SELL" and 'revenue' in locals()) else 0),
+                'profit_loss': real_pnl,  # Use real P&L instead of individual trade revenue
                 'order_id': order.get('orderId', '') if 'order' in locals() else ''
             }
             trade_info['order_id'] = additional_data['order_id']
