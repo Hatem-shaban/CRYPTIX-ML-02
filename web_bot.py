@@ -26,6 +26,8 @@ try:
     from risk_manager import get_risk_manager
     from market_intelligence import get_market_intelligence
     from ml_predictor import EnhancedMLPredictor
+    from smart_position_tracker import get_position_tracker
+    from smart_profit_taker import get_smart_profit_taker
     
     ENHANCED_MODULES_AVAILABLE = True
     print("✅ Enhanced trading modules loaded successfully")
@@ -288,9 +290,26 @@ def setup_csv_logging():
     return csv_files
 
 def log_trade_to_csv(trade_info, additional_data=None):
-    """Log trade information to CSV file"""
+    """Log trade information to CSV file and update position tracking"""
     try:
         csv_files = setup_csv_logging()
+        
+        # 🎯 Update position tracking
+        try:
+            position_tracker = get_position_tracker()
+            signal = trade_info.get('signal', '').upper()
+            symbol = trade_info.get('symbol', '')
+            quantity = float(trade_info.get('quantity', 0))
+            price = float(trade_info.get('price', 0))
+            
+            if signal == 'BUY' and symbol and quantity > 0 and price > 0:
+                position_tracker.update_position(symbol, quantity, price, 'BUY')
+                print(f"📊 Updated position: BUY {quantity:.8f} {symbol} @ ${price:.4f}")
+            elif signal in ['SELL', 'SELL_PARTIAL'] and symbol and quantity > 0:
+                position_tracker.update_position(symbol, quantity, price, 'SELL')
+                print(f"📊 Updated position: SELL {quantity:.8f} {symbol} @ ${price:.4f}")
+        except Exception as e:
+            print(f"⚠️ Position tracking update failed: {e}")
         
         # Prepare trade data
         trade_data = [
@@ -651,10 +670,10 @@ bot_status = {
     'hunting_mode': False,  # Aggressive opportunity hunting mode
     'last_volatility_check': None,  # Track when we last checked volatility
     'adaptive_intervals': {
-        'QUIET': 3600,       # 60 minutes during quiet markets (increased from 30min)
-        'NORMAL': 1800,      # 30 minutes during normal markets (increased from 5min)
-        'VOLATILE': 900,     # 15 minutes during volatile markets (increased from 3min)
-        'EXTREME': 600,      # 10 minutes during extreme volatility (increased from 1min)
+        'QUIET': 1800,       # 60 minutes during quiet markets (increased from 30min)
+        'NORMAL': 900,      # 30 minutes during normal markets (increased from 5min)
+        'VOLATILE': 600,     # 15 minutes during volatile markets (increased from 3min)
+        'EXTREME': 300,      # 10 minutes during extreme volatility (increased from 1min)
         'HUNTING': 300       # 5 minutes when hunting opportunities (increased from 30s)
     },
     'trading_summary': {
@@ -6958,7 +6977,63 @@ def execute_position_rebalancing():
                 sell_percentage = config.REBALANCING.get('partial_sell_percentage', 40.0)
                 
             if asset_rsi >= rsi_threshold:
-                print(f"� {asset} RSI: {asset_rsi:.1f} ≥ {rsi_threshold} - OVERBOUGHT DETECTED!")
+                print(f"⚠️ {asset} RSI: {asset_rsi:.1f} ≥ {rsi_threshold} - OVERBOUGHT DETECTED!")
+                
+                # 🎯 ENHANCED PROFITABILITY CHECK
+                try:
+                    position_tracker = get_position_tracker()
+                    smart_profit_taker = get_smart_profit_taker()
+                    current_price = float(client.get_ticker(symbol=symbol)['lastPrice'])
+                    
+                    # Get asset-specific minimum profit percentage
+                    asset_conditions = config.REBALANCING.get('partial_sell_conditions', {})
+                    if asset in asset_conditions:
+                        minimum_profit_pct = asset_conditions[asset].get('minimum_profit_pct', 2.0)
+                    else:
+                        minimum_profit_pct = config.REBALANCING.get('minimum_profit_pct', 2.0)
+                    
+                    # Basic profitability check
+                    should_sell, reason = position_tracker.should_allow_partial_sell(
+                        symbol, current_price, minimum_profit_pct
+                    )
+                    
+                    if not should_sell:
+                        print(f"❌ {asset} sell BLOCKED: {reason}")
+                        print(f"   RSI ({asset_rsi:.1f}) suggests sell, but profit check prevents loss")
+                        continue
+                    
+                    # Get position info for smart profit analysis
+                    position_info = position_tracker.get_position_info(symbol)
+                    if position_info:
+                        # Enhanced profit-taking analysis
+                        should_take_profits, profit_analysis = smart_profit_taker.should_take_profits(
+                            symbol, current_price, position_info['avg_buy_price'],
+                            minimum_profit_pct, rsi=asset_rsi
+                        )
+                        
+                        if should_take_profits:
+                            # Use smart profit taker's recommended percentage
+                            recommended_pct = profit_analysis['recommendation']['sell_percentage']
+                            if recommended_pct > 0:
+                                sell_percentage = min(sell_percentage, recommended_pct)
+                                print(f"🎯 {asset} SMART PROFIT TAKING:")
+                                print(f"   📊 Analysis: {profit_analysis['reason']}")
+                                print(f"   💰 Profit: {profit_analysis['profit_pct']:.2f}% (${profit_analysis['profit_usd_per_unit']:.4f}/unit)")
+                                print(f"   📈 Action: {profit_analysis['decision']} ({sell_percentage}%)")
+                                print(f"   🎚️ Confidence: {profit_analysis['recommendation']['confidence']:.1%}")
+                            else:
+                                print(f"⏳ {asset} smart analysis suggests HOLD despite RSI")
+                                continue
+                        else:
+                            print(f"⏳ {asset} smart profit analysis suggests HOLD: {profit_analysis['reason']}")
+                            continue
+                    else:
+                        print(f"✅ {asset} basic profit check passed: {reason}")
+                    
+                except Exception as e:
+                    print(f"⚠️ Error in smart profit analysis for {asset}: {e}")
+                    print(f"   🛡️ BLOCKING sell due to analysis failure (safety first)")
+                    continue
                 
                 # Check if we should preserve core holdings
                 preserve_holdings = config.REBALANCING.get('preserve_core_holdings', {})
