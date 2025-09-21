@@ -244,5 +244,46 @@
       "regime"
     ],
     "training_duration": "completed"
+  },
+  {
+    "timestamp": "2025-09-21T14:45:05.724771",
+    "data_samples": 37772,
+    "data_period": "2025-06-23 12:00:00 to 2025-09-21 10:00:00",
+    "results": {
+      "trend": {
+        "success": true,
+        "train_accuracy": 0.863553628752027,
+        "test_accuracy": 0.5625413633355394,
+        "features_used": 50.0,
+        "training_samples": 30217
+      },
+      "signal": {
+        "success": true,
+        "train_accuracy": 0.8867524903200186,
+        "test_accuracy": 0.6022501654533422,
+        "auc_score": 0.5306352215013,
+        "features_used": 40.0,
+        "training_samples": 30217,
+        "positive_rate": 0.2223251811893967
+      },
+      "regime": {
+        "success": true,
+        "train_accuracy": 0.8503160472581659,
+        "test_accuracy": 0.7421575115817339,
+        "features_used": 35.0,
+        "training_samples": 30217,
+        "regime_classes": [
+          "downtrend",
+          "sideways",
+          "uptrend"
+        ]
+      }
+    },
+    "models_trained": [
+      "trend",
+      "signal",
+      "regime"
+    ],
+    "training_duration": "completed"
   }
 ]
