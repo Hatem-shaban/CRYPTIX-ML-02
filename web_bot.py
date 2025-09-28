@@ -670,10 +670,10 @@ bot_status = {
     'hunting_mode': False,  # Aggressive opportunity hunting mode
     'last_volatility_check': None,  # Track when we last checked volatility
     'adaptive_intervals': {
-        'QUIET': 1800,       # 60 minutes during quiet markets (increased from 30min)
-        'NORMAL': 900,      # 30 minutes during normal markets (increased from 5min)
-        'VOLATILE': 600,     # 15 minutes during volatile markets (increased from 3min)
-        'EXTREME': 300,      # 10 minutes during extreme volatility (increased from 1min)
+        'QUIET': 3600,       # 60 minutes during quiet markets (increased from 30min)
+        'NORMAL': 1800,      # 30 minutes during normal markets (increased from 5min)
+        'VOLATILE': 900,     # 15 minutes during volatile markets (increased from 3min)
+        'EXTREME': 600,      # 10 minutes during extreme volatility (increased from 1min)
         'HUNTING': 300       # 5 minutes when hunting opportunities (increased from 30s)
     },
     'trading_summary': {
