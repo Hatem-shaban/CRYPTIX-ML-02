@@ -148,7 +148,6 @@ training_data/*.csv
 
 # Log files that can grow large
 logs/*.log
-logs/daily_performance.csv
 logs/error_log.csv
 logs/signal_history.csv
 logs/trade_history.csv

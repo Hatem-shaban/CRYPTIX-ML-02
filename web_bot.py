@@ -216,7 +216,6 @@ def setup_csv_logging():
     csv_files = {
         'trades': logs_dir / 'trade_history.csv',
         'signals': logs_dir / 'signal_history.csv',
-        'performance': logs_dir / 'daily_performance.csv',
         'errors': logs_dir / 'error_log.csv'
     }
     
@@ -232,11 +231,6 @@ def setup_csv_logging():
         'sentiment', 'sma5', 'sma20', 'reason'
     ]
     
-    performance_headers = [
-        'date', 'total_trades', 'successful_trades', 'failed_trades', 'win_rate',
-        'total_revenue', 'daily_pnl', 'total_volume', 'max_drawdown'
-    ]
-    
     error_headers = [
         'timestamp', 'cairo_time', 'error_type', 'error_message', 'function_name',
         'severity', 'bot_status'
@@ -245,7 +239,6 @@ def setup_csv_logging():
     headers_map = {
         'trades': trade_headers,
         'signals': signal_headers,
-        'performance': performance_headers,
         'errors': error_headers
     }
     
@@ -442,91 +435,6 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
         # Log the error for debugging
         import traceback
         print(f"Stack trace: {traceback.format_exc()}")
-
-def log_daily_performance(date_dt: Optional[datetime] = None):
-    """Compute and log daily performance for the given Cairo date.
-    If date_dt is None, uses current Cairo date. Avoids duplicate rows for the same date.
-    Metrics are computed from logs/trade_history.csv to ensure per-day accuracy.
-    """
-    try:
-        csv_files = setup_csv_logging()
-
-        # Determine which date to log (Cairo date string YYYY-MM-DD)
-        day_dt = date_dt or get_cairo_time()
-        if day_dt.tzinfo is None:
-            day_dt = pytz.UTC.localize(day_dt).astimezone(CAIRO_TZ)
-        elif day_dt.tzinfo != CAIRO_TZ:
-            day_dt = day_dt.astimezone(CAIRO_TZ)
-        day_str = day_dt.strftime('%Y-%m-%d')
-
-        # Check if already logged for this date
-        already_logged = False
-        if csv_files['performance'].exists():
-            try:
-                pdf = pd.read_csv(csv_files['performance'])
-                if not pdf.empty and 'date' in pdf.columns:
-                    already_logged = (pdf['date'].astype(str) == day_str).any()
-            except Exception:
-                pass
-        if already_logged:
-            return True
-
-        # Compute metrics from trade history
-        total_trades = successful_trades = failed_trades = 0
-        win_rate = 0.0
-        total_revenue = 0.0
-        daily_pnl = 0.0
-        total_volume = 0.0
-        max_drawdown = 0.0  # Placeholder
-
-        if csv_files['trades'].exists():
-            try:
-                tdf = pd.read_csv(csv_files['trades'])
-                if not tdf.empty:
-                    # Ensure columns exist
-                    if 'cairo_time' in tdf.columns:
-                        # Extract Cairo date portion
-                        tdf['cairo_date'] = tdf['cairo_time'].astype(str).str[:10]
-                        ddf = tdf[tdf['cairo_date'] == day_str]
-                    else:
-                        ddf = pd.DataFrame()
-
-                    if not ddf.empty:
-                        total_trades = len(ddf)
-                        successful_trades = int((ddf.get('status', pd.Series(dtype=str)) == 'success').sum())
-                        failed_trades = total_trades - successful_trades
-                        # Sum numeric fields safely
-                        if 'profit_loss' in ddf.columns:
-                            daily_pnl = pd.to_numeric(ddf['profit_loss'], errors='coerce').fillna(0).sum()
-                        if 'value' in ddf.columns:
-                            total_volume = pd.to_numeric(ddf['value'], errors='coerce').fillna(0).sum()
-                        # For total_revenue, reuse daily_pnl as realized result
-                        total_revenue = float(daily_pnl)
-                        win_rate = (successful_trades / total_trades * 100.0) if total_trades > 0 else 0.0
-            except Exception as e:
-                print(f"Error computing daily metrics for {day_str}: {e}")
-
-        # Prepare row
-        performance_data = [
-            day_str,
-            total_trades,
-            successful_trades,
-            failed_trades,
-            win_rate,
-            total_revenue,
-            daily_pnl,
-            total_volume,
-            max_drawdown
-        ]
-
-        # Append row
-        with open(csv_files['performance'], 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(performance_data)
-        return True
-    except Exception as e:
-        print(f"Error logging daily performance to CSV: {e}")
-        return False
 
 def log_error_to_csv(error_message, error_type="GENERAL", function_name="", severity="ERROR"):
     """Log errors to CSV file"""
@@ -4442,7 +4350,7 @@ def trading_loop():
                 except Exception as telegram_error:
                     print(f"Telegram market update failed: {telegram_error}")
             
-            # Send daily summary each day at 08:00 Cairo time (once per day) and log daily performance for the previous day
+            # Send daily summary each day at 08:00 Cairo time (once per day)
             if config.TELEGRAM.get('notifications', {}).get('daily_summary', True):
                 try:
                     last_summary_date = bot_status.get('last_daily_summary')
@@ -4450,14 +4358,11 @@ def trading_loop():
                     # Trigger within the first 15 minutes after 08:00 to allow for scheduling jitter
                     if (current_time.hour == 8 and current_time.minute < 15 and
                         (last_summary_date != current_date)):
-                        # First, write yesterday's performance row to CSV
-                        yesterday = (current_time - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-                        log_daily_performance(yesterday)
-                        # Then, send Telegram daily summary if Telegram is available
+                        # Send Telegram daily summary if Telegram is available
                         if TELEGRAM_AVAILABLE:
                             notify_daily_summary(bot_status.get('trading_summary', {}))
                         bot_status['last_daily_summary'] = current_date
-                        print(f"📊 Daily performance logged and summary processed for {current_date} (08:00 Cairo)")
+                        print(f"📊 Daily summary processed for {current_date} (08:00 Cairo)")
                 except Exception as telegram_error:
                     print(f"Daily summary notification failed: {telegram_error}")
             
@@ -5612,9 +5517,6 @@ def view_logs():
                     <a href="/logs/signals">
                         📈 <span>Signal History</span>
                     </a>
-                    <a href="/logs/performance">
-                        📉 <span>Daily Performance</span>
-                    </a>
                     <a href="/logs/errors">
                         ❌ <span>Error Log</span>
                     </a>
@@ -5914,168 +5816,6 @@ def view_signal_logs():
         
     except Exception as e:
         return f"Error loading signal logs: {e}"
-
-@app.route('/logs/performance')
-def view_performance_logs():
-    """View daily performance CSV in simple format"""
-    try:
-        csv_files = setup_csv_logging()
-        performance_data = []
-        
-        if csv_files['performance'].exists():
-            df = pd.read_csv(csv_files['performance'])
-            # Convert to list of dictionaries, newest first (reverse order)
-            performance_data = df.iloc[::-1].to_dict('records')
-        
-        return render_template_string("""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Performance</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 0; 
-            background: #f5f5f5;
-            padding: 10px;
-        }
-        .container { 
-            max-width: 1400px; 
-            margin: 0 auto; 
-            background: white; 
-            padding: 15px; 
-            border-radius: 10px;
-            overflow-x: hidden;
-        }
-        .table-wrapper {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            margin: 0 -15px;
-            padding: 0 15px;
-        }
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-top: 15px; 
-            font-size: 0.85rem;
-            min-width: 800px;
-        }
-        th, td { 
-            padding: 10px 12px; 
-            border: 1px solid #ddd; 
-            text-align: left;
-            white-space: nowrap;
-        }
-        th { 
-            background: #f8f9fa; 
-            font-weight: bold; 
-            position: sticky; 
-            top: 0;
-            z-index: 1;
-        }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .back-link { 
-            display: inline-block; 
-            margin-bottom: 20px; 
-            padding: 12px 20px; 
-            background: #28a745; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px;
-            font-size: 0.9rem;
-        }
-        .back-link:hover {
-            background: #218838;
-        }
-        h1 {
-            font-size: 1.8rem;
-            margin: 15px 0;
-        }
-        .positive { color: #28a745; font-weight: bold; }
-        .negative { color: #dc3545; font-weight: bold; }
-        .neutral { color: #6c757d; font-weight: bold; }
-        
-        @media (max-width: 768px) {
-            body {
-                padding: 5px;
-            }
-            .container {
-                padding: 10px;
-            }
-            h1 {
-                font-size: 1.5rem;
-                margin: 10px 0;
-            }
-            table {
-                font-size: 0.8rem;
-            }
-            th, td {
-                padding: 8px 10px;
-            }
-            .back-link {
-                width: 100%;
-                text-align: center;
-                box-sizing: border-box;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <a href="/logs" class="back-link">← Back to Logs</a>
-        <h1>📊 Daily Performance (CSV Format)</h1>
-        
-        {% if performance_data %}
-        <div class="table-wrapper">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Total Trades</th>
-                        <th>Successful Trades</th>
-                        <th>Failed Trades</th>
-                        <th>Win Rate (%)</th>
-                        <th>Total Revenue</th>
-                        <th>Daily P&L</th>
-                        <th>Total Volume</th>
-                        <th>Max Drawdown</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in performance_data %}
-                    <tr>
-                        <td>{{ row.date }}</td>
-                        <td>{{ row.total_trades }}</td>
-                        <td>{{ row.successful_trades }}</td>
-                        <td>{{ row.failed_trades }}</td>
-                        <td class="{{ 'positive' if row.win_rate > 60 else 'negative' if row.win_rate < 40 else 'neutral' }}">
-                            {{ "%.1f"|format(row.win_rate) }}%
-                        </td>
-                        <td class="{{ 'positive' if row.total_revenue > 0 else 'negative' if row.total_revenue < 0 else 'neutral' }}">
-                            ${{ "%.2f"|format(row.total_revenue) }}
-                        </td>
-                        <td class="{{ 'positive' if row.daily_pnl > 0 else 'negative' if row.daily_pnl < 0 else 'neutral' }}">
-                            ${{ "%.2f"|format(row.daily_pnl) }}
-                        </td>
-                        <td>${{ "%.2f"|format(row.total_volume) }}</td>
-                        <td>{{ "%.2f"|format(row.max_drawdown) if row.max_drawdown else '0.00' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <p>No daily performance data found. Performance data will appear here once the bot starts trading and logging daily summaries.</p>
-        {% endif %}
-    </div>
-</body>
-</html>
-        """, performance_data=performance_data)
-        
-    except Exception as e:
-        return f"Error loading performance logs: {e}"
 
 @app.route('/logs/errors')
 def view_error_logs():
