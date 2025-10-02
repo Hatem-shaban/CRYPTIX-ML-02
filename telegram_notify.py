@@ -289,7 +289,7 @@ class TelegramNotifier:
             
         emoji_map = {
             'BUY': '🟢',
-            'SELL': '🔴', 
+            'SELL': '�', 
             'HOLD': '🟡',
             'SUCCESS': '✅',
             'FAILED': '❌',
@@ -351,30 +351,36 @@ class TelegramNotifier:
         status = trade_info.get('status', 'unknown')
         
         if is_executed and status == 'success':
-            emoji = self._get_emoji('SUCCESS')
-            status_text = "EXECUTED"
+            # Use different colors and specific text for BUY vs SELL signals
+            if signal.upper() == 'BUY':
+                emoji = self._get_emoji('BUY')  # 🟢 Green for BUY
+                action_emoji = "🟢"
+                status_text = "BUY TRADE"
+            elif signal.upper() == 'SELL':
+                emoji = self._get_emoji('SELL')  # 🔵 Blue for SELL  
+                action_emoji = "🔵"
+                status_text = "SELL TRADE"
+            else:
+                emoji = self._get_emoji('SUCCESS')  # ✅ Default
+                action_emoji = "🚦"
+                status_text = "TRADE EXECUTED"
         elif status == 'insufficient_funds':
             emoji = self._get_emoji('WARNING')
+            action_emoji = "⚠️"
             status_text = "INSUFFICIENT FUNDS"
         else:
             emoji = self._get_emoji('FAILED')
+            action_emoji = "❌"
             status_text = "FAILED"
             
         message = f"""
-{emoji} <b>TRADE {status_text}</b> {emoji}
+{emoji} <b>{status_text}</b> {emoji}
 
 📊 <b>Symbol:</b> {symbol}
-🚦 <b>Action:</b> {signal}
-📦 <b>Quantity:</b> {quantity:.8f}
-💰 <b>Price:</b> {self._format_price(price)}
+{action_emoji} <b>Action:</b> {signal}
+ <b>Price:</b> {self._format_price(price)}
 💵 <b>Value:</b> {self._format_price(value)}
 """
-
-        if 'fee' in trade_info and trade_info['fee'] > 0:
-            message += f"💸 <b>Fee:</b> {self._format_price(trade_info['fee'])}\n"
-            
-        if 'order_id' in trade_info and trade_info['order_id']:
-            message += f"🆔 <b>Order ID:</b> {trade_info['order_id']}\n"
 
         # Add profit/loss if available
         if self.message_format.get('include_profit_loss', True) and 'profit_loss' in trade_info:
@@ -382,8 +388,6 @@ class TelegramNotifier:
             if pnl != 0:
                 pnl_emoji = self._get_emoji('PROFIT') if pnl > 0 else self._get_emoji('LOSS')
                 message += f"{pnl_emoji} <b>P&L:</b> {self._format_price(pnl)}\n"
-                
-        message += f"🕒 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return self._send_message(message.strip())
 
