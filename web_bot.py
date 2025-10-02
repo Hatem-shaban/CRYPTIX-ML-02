@@ -3721,14 +3721,14 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 from portfolio_tracker import get_portfolio_tracker
                 portfolio_tracker = get_portfolio_tracker()
                 
-                # Set starting balance if not set (user said they started with $100)
+                # Set starting balance if not set (user said they started with $1000)
                 if portfolio_tracker.data['starting_balance'] is None:
-                    portfolio_tracker.set_starting_balance(100.0)
+                    portfolio_tracker.set_starting_balance(1000.0)
                 
                 # Calculate real P&L based on total portfolio change
                 real_pnl = portfolio_tracker.update_balance(balance_after)
                 
-                print(f"📊 Real P&L: ${real_pnl:.2f} (Portfolio: ${balance_after:.2f} - Starting: $100.00)")
+                print(f"📊 Real P&L: ${real_pnl:.2f} (Portfolio: ${balance_after:.2f} - Starting: $1000.00)")
                 
             except Exception as e:
                 print(f"⚠️ Portfolio tracking failed: {e}")

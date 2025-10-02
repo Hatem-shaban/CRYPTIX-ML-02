@@ -118,10 +118,10 @@ if __name__ == "__main__":
     tracker = PortfolioTracker()
     
     # Simulate user's scenario
-    tracker.set_starting_balance(100.0)  # Started with $100
+    tracker.set_starting_balance(1000.0)  # Started with $1000
     
     # Update to current balance
-    current_pnl = tracker.update_balance(114.0)  # Now has $114
+    current_pnl = tracker.update_balance(1014.0)  # Now has $1014 (assuming same $14 profit)
     
     print("\n📊 PORTFOLIO SUMMARY:")
     summary = tracker.get_summary()
