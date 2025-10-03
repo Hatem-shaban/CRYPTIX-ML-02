@@ -50,6 +50,22 @@ ESTIMATED_AVG_WIN = float(os.getenv('ESTIMATED_AVG_WIN', '1.5'))  # Average win 
 ESTIMATED_AVG_LOSS = float(os.getenv('ESTIMATED_AVG_LOSS', '1.0'))  # Average loss percentage
 MAX_PORTFOLIO_HEAT = int(os.getenv('MAX_PORTFOLIO_HEAT', '5'))  # Max concurrent positions
 
+# Aggressive Position Sizing for Larger Trades
+POSITION_SIZING = {
+    'default_risk_pct': 5.0,      # 5% risk = ~$45 trades (increased from 1.15%)
+    'max_risk_pct': 10.0,         # 10% max = ~$90 trades (increased from 2.0%)
+    'adaptive_sizing': True,      # Enable dynamic sizing
+    'confidence_based': True      # Scale with signal confidence
+}
+
+# Dynamic Sizing Based on Signal Confidence
+DYNAMIC_SIZING = {
+    'base_amount': 50,           # Start with $50 instead of $10
+    'confidence_multiplier': 3.0, # Up to 3x for high confidence
+    'max_amount': 200,           # Cap at $200 per trade
+    'min_amount': 25             # Never go below $25 (override exchange minimum)
+}
+
 # Enhanced Signal Filtering Configuration
 SIGNAL_NOISE_THRESHOLD = float(os.getenv('SIGNAL_NOISE_THRESHOLD', '0.7'))  # Signal quality threshold
 MIN_VOLUME_RATIO = float(os.getenv('MIN_VOLUME_RATIO', '1.2'))  # Minimum volume vs average
