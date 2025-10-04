@@ -2973,6 +2973,68 @@ def update_trade_tracking(trade_result, profit_loss=0):
     except Exception as e:
         log_error_to_csv(str(e), "TRACKING_ERROR", "update_trade_tracking", "ERROR")
 
+def apply_dynamic_sizing_and_minimum_check(position_result, signal, symbol, current_price, usdt_balance, confidence_score):
+    """Apply DYNAMIC_SIZING configuration and intelligent minimum notional checking"""
+    
+    # Apply DYNAMIC_SIZING configuration override
+    if hasattr(config, 'DYNAMIC_SIZING') and config.DYNAMIC_SIZING.get('base_amount'):
+        print(f"\n💰 Applying DYNAMIC_SIZING configuration...")
+        
+        # Get dynamic sizing parameters
+        base_amount = config.DYNAMIC_SIZING.get('base_amount', 50)
+        confidence_multiplier = config.DYNAMIC_SIZING.get('confidence_multiplier', 3.0)
+        max_amount = config.DYNAMIC_SIZING.get('max_amount', 200)
+        
+        # Calculate dynamic position value (no custom minimum)
+        dynamic_value = base_amount * (1 + (confidence_score * confidence_multiplier))
+        dynamic_value = min(max_amount, dynamic_value)  # Only apply max cap, no custom minimum
+        
+        # Convert to quantity
+        dynamic_quantity = dynamic_value / current_price
+        
+        print(f"   📊 Dynamic sizing calculation:")
+        print(f"   Base amount: ${base_amount}")
+        print(f"   Confidence score: {confidence_score:.3f}")
+        print(f"   Confidence multiplier: {confidence_multiplier}")
+        print(f"   Calculated value: ${dynamic_value:.2f}")
+        print(f"   Dynamic quantity: {dynamic_quantity:.8f}")
+        print(f"   Original quantity: {position_result['quantity']:.8f}")
+        
+        # Use the larger of the two calculations
+        if dynamic_quantity > position_result['quantity']:
+            print(f"   ✅ Using DYNAMIC_SIZING (larger): ${dynamic_value:.2f}")
+            position_result['quantity'] = dynamic_quantity
+            position_result['risk_amount'] = dynamic_value
+            position_result['risk_percentage'] = (dynamic_value / usdt_balance) * 100
+            position_result['sizing_method'] = 'DYNAMIC_SIZING'
+        else:
+            print(f"   📊 Keeping advanced sizing (larger): ${position_result['risk_amount']:.2f}")
+            position_result['sizing_method'] = 'ADVANCED_POSITION_MANAGER'
+    
+    # Simple minimum notional checking - respect only exchange requirements
+    qty = position_result['quantity']
+    smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, 
+                                                             available_usdt=usdt_balance if signal == "BUY" else None)
+    
+    exchange_min_qty = smart_min_trade_value / current_price
+    current_trade_value = qty * current_price
+    
+    print(f"\n🔍 Exchange Minimum Check:")
+    print(f"   Current trade value: ${current_trade_value:.2f}")
+    print(f"   Exchange minimum: ${smart_min_trade_value:.2f}")
+    
+    if qty < exchange_min_qty:
+        print(f"   📈 Adjusting to meet exchange minimum: ${smart_min_trade_value:.2f}")
+        qty = exchange_min_qty
+        position_result['quantity'] = qty
+        position_result['risk_amount'] = qty * current_price
+        position_result['risk_percentage'] = (qty * current_price / usdt_balance) * 100
+    else:
+        print(f"   ✅ Position already meets exchange requirements")
+    
+    return position_result, qty
+
+
 def execute_trade(signal, symbol="BTCUSDT", qty=None):
     print("\n=== Trade Execution Debug Log ===")
     print(f"Attempting trade: {signal} for {symbol}")
@@ -3084,6 +3146,11 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         market_regime=market_conditions['regime']
                     )
                     
+                    # Apply DYNAMIC_SIZING and enhanced minimum checking
+                    position_result, qty = apply_dynamic_sizing_and_minimum_check(
+                        position_result, signal, symbol, current_price, usdt_balance, confidence_score
+                    )
+                    
                     # Comprehensive Risk Assessment
                     print("\n🛡️ Conducting comprehensive risk assessment...")
                     risk_manager = get_risk_manager()
@@ -3120,16 +3187,10 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         position_result['quantity'] *= multiplier
                         print(f"   📉 Position size adjusted by {multiplier:.0%} due to risk factors")
                     
-                    # Use enhanced position size, but ensure it meets smart minimum requirements
-                    qty = position_result['quantity']
-                    
-                    # CRITICAL FIX: Ensure ALL orders (BUY and SELL) meet minimum notional requirements
-                    smart_min_trade_value = calculate_smart_minimum_trade_usdt(symbol, current_price, 
-                                                                             available_usdt=usdt_balance if signal == "BUY" else None)
-                    min_qty_for_smart_minimum = smart_min_trade_value / current_price
-                    
-                    # Always check minimum quantity regardless of signal type
-                    if qty < min_qty_for_smart_minimum:
+                    # Apply DYNAMIC_SIZING and enhanced minimum checking
+                    position_result, qty = apply_dynamic_sizing_and_minimum_check(
+                        position_result, signal, symbol, current_price, usdt_balance, confidence_score
+                    )
                         print(f"   � Position size below minimum notional requirement:")
                         print(f"   Current quantity: {qty:.8f} (${qty * current_price:.2f})")
                         print(f"   Minimum required: {min_qty_for_smart_minimum:.8f} (${smart_min_trade_value:.2f})")
