@@ -63,7 +63,7 @@ DYNAMIC_SIZING = {
     'base_amount': 50,           # Start with $50 instead of $10
     'confidence_multiplier': 3.0, # Up to 3x for high confidence
     'max_amount': 200,           # Cap at $200 per trade
-    'min_amount': 25             # Never go below $25 (override exchange minimum)
+    # No min_amount - respect exchange minimums only
 }
 
 # Enhanced Signal Filtering Configuration
