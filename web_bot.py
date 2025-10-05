@@ -2072,13 +2072,27 @@ def get_account_balances_summary():
         log_error_to_csv(error_msg, "BALANCE_SUMMARY_ERROR", "get_account_balances_summary", "ERROR")
         return {"error": error_msg}
 
-def check_usdt_balance(symbol="BTCUSDT"):
-    """Check if we have sufficient USDT balance to place a BUY order"""
+def calculate_dynamic_trade_value(confidence_score):
+    """Calculate the trade value that would be used by DYNAMIC_SIZING"""
+    if hasattr(config, 'DYNAMIC_SIZING') and config.DYNAMIC_SIZING.get('base_amount'):
+        base_amount = config.DYNAMIC_SIZING.get('base_amount', 50)
+        confidence_multiplier = config.DYNAMIC_SIZING.get('confidence_multiplier', 3.0)
+        max_amount = config.DYNAMIC_SIZING.get('max_amount', 200)
+        
+        # Calculate dynamic position value
+        dynamic_value = base_amount * (1 + (confidence_score * confidence_multiplier))
+        dynamic_value = min(max_amount, dynamic_value)
+        return dynamic_value
+    
+    return 50  # Default base amount if DYNAMIC_SIZING not configured
+
+def check_usdt_balance(symbol="BTCUSDT", confidence_score=None):
+    """Check if we have sufficient USDT balance to place a BUY order, considering DYNAMIC_SIZING"""
     try:
         # Cache to reduce repeated API calls within a short window
         if 'usdt_balance_cache' not in bot_status:
             bot_status['usdt_balance_cache'] = {}
-        cache_key = f"{symbol}_USDT_CHECK"
+        cache_key = f"{symbol}_USDT_CHECK_{confidence_score or 'min'}"
         cache_entry = bot_status['usdt_balance_cache'].get(cache_key)
         now = get_cairo_time()
         if cache_entry and (now - cache_entry['time']).total_seconds() < 180:  # 3 minute cache
@@ -2100,8 +2114,19 @@ def check_usdt_balance(symbol="BTCUSDT"):
         if usdt_balance is None:
             result = (False, 0, "USDT balance not found in account")
         else:
-            # Use smart minimum calculation with available balance for adaptive margin
-            min_required = calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance)
+            # Calculate the required balance considering DYNAMIC_SIZING
+            if confidence_score is not None:
+                # Check if we have enough for the DYNAMIC_SIZING calculation
+                dynamic_trade_value = calculate_dynamic_trade_value(confidence_score)
+                min_required = max(
+                    calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance),
+                    dynamic_trade_value
+                )
+                required_type = f"DYNAMIC_SIZING (${dynamic_trade_value:.2f})"
+            else:
+                # Fallback to minimum check only
+                min_required = calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance)
+                required_type = "minimum trade"
             has_sufficient = usdt_balance >= min_required
             
             result = (
@@ -2664,9 +2689,13 @@ def signal_generator(df, symbol="BTCUSDT"):
         elif signal == "BUY":
             print(f"\n💰 Validating conditions for BUY signal...")
             
-            # First, check if we have sufficient USDT balance
+            # First, check if we have sufficient USDT balance considering DYNAMIC_SIZING
             try:
-                has_usdt, usdt_amount, usdt_msg = check_usdt_balance(symbol)
+                # Get confidence score for DYNAMIC_SIZING calculation
+                confidence_score = bot_status.get('last_signal_quality', {}).get('confidence', 0.5)
+                
+                # Check balance with DYNAMIC_SIZING considerations
+                has_usdt, usdt_amount, usdt_msg = check_usdt_balance(symbol, confidence_score)
                 
                 if not has_usdt:
                     print(f"   ❌ Cannot execute BUY - {usdt_msg}")
