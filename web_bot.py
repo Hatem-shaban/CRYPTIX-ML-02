@@ -3720,13 +3720,10 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
         error_code = getattr(e, 'code', 0)
         error_msg = str(e)
         
-        if error_code == -2010 or "insufficient balance" in error_msg.lower():
-            trade_info['status'] = 'insufficient_funds'
-            trade_info['error'] = f"Insufficient balance: {error_msg}"
-            print(f"❌ INSUFFICIENT BALANCE ERROR: {error_msg}")
-            print(f"   This should have been caught earlier in signal generation!")
-            log_error_to_csv(f"API Balance Error (Code: {error_code}): {error_msg}", "API_ERROR", "execute_trade", "ERROR")
-        elif error_code == -1013:
+        # Note: Insufficient balance (-2010) is handled upstream in signal generation
+        # so if we get here, it's likely a different issue
+        
+        if error_code == -1013:
             # Enhanced handling for filter failures
             trade_info['status'] = 'filter_failure'
             trade_info['error'] = f"Order filter failure: {error_msg}"
