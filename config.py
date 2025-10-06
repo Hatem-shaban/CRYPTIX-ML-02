@@ -63,6 +63,9 @@ DYNAMIC_SIZING = {
     'base_amount': 50,           # Start with $50 instead of $10
     'confidence_multiplier': 3.0, # Up to 3x for high confidence
     'max_amount': 200,           # Cap at $200 per trade
+    'adaptive_to_balance': True, # Scale down based on available balance
+    'min_balance_ratio': 0.8,   # Use up to 80% of available balance if needed
+    'fallback_percentage': 60,  # If can't afford base_amount, use 60% of balance
     # No min_amount - respect exchange minimums only
 }
 

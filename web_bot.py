@@ -2072,17 +2072,38 @@ def get_account_balances_summary():
         log_error_to_csv(error_msg, "BALANCE_SUMMARY_ERROR", "get_account_balances_summary", "ERROR")
         return {"error": error_msg}
 
-def calculate_dynamic_trade_value(confidence_score):
-    """Calculate the trade value that would be used by DYNAMIC_SIZING"""
+def calculate_dynamic_trade_value(confidence_score, available_usdt=None):
+    """Calculate the trade value that would be used by DYNAMIC_SIZING, adaptive to available balance"""
     if hasattr(config, 'DYNAMIC_SIZING') and config.DYNAMIC_SIZING.get('base_amount'):
         base_amount = config.DYNAMIC_SIZING.get('base_amount', 50)
         confidence_multiplier = config.DYNAMIC_SIZING.get('confidence_multiplier', 3.0)
         max_amount = config.DYNAMIC_SIZING.get('max_amount', 200)
+        adaptive_to_balance = config.DYNAMIC_SIZING.get('adaptive_to_balance', False)
+        min_balance_ratio = config.DYNAMIC_SIZING.get('min_balance_ratio', 0.8)
+        fallback_percentage = config.DYNAMIC_SIZING.get('fallback_percentage', 60)
         
-        # Calculate dynamic position value
-        dynamic_value = base_amount * (1 + (confidence_score * confidence_multiplier))
-        dynamic_value = min(max_amount, dynamic_value)
-        return dynamic_value
+        # Calculate ideal dynamic position value
+        ideal_value = base_amount * (1 + (confidence_score * confidence_multiplier))
+        ideal_value = min(max_amount, ideal_value)
+        
+        # If adaptive sizing is enabled and we have balance info
+        if adaptive_to_balance and available_usdt is not None:
+            max_affordable = available_usdt * min_balance_ratio
+            
+            if ideal_value > max_affordable:
+                # If we can't afford the ideal amount, scale down intelligently
+                if max_affordable >= base_amount:
+                    # Use what we can afford, but at least base amount
+                    adaptive_value = max_affordable
+                    print(f"   🔄 DYNAMIC_SIZING: Scaling down from ${ideal_value:.2f} to ${adaptive_value:.2f} (available: ${available_usdt:.2f})")
+                    return adaptive_value
+                else:
+                    # Use fallback percentage of available balance
+                    fallback_value = available_usdt * (fallback_percentage / 100)
+                    print(f"   🔄 DYNAMIC_SIZING: Using fallback {fallback_percentage}% of balance: ${fallback_value:.2f} (ideal: ${ideal_value:.2f})")
+                    return fallback_value
+        
+        return ideal_value
     
     return 50  # Default base amount if DYNAMIC_SIZING not configured
 
@@ -2116,12 +2137,12 @@ def check_usdt_balance(symbol="BTCUSDT", confidence_score=None):
         else:
             # Calculate the required balance considering DYNAMIC_SIZING
             if confidence_score is not None:
-                # Check if we have enough for the DYNAMIC_SIZING calculation
-                dynamic_trade_value = calculate_dynamic_trade_value(confidence_score)
-                min_required = max(
-                    calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance),
-                    dynamic_trade_value
-                )
+                # Pass available balance to DYNAMIC_SIZING for adaptive calculation
+                dynamic_trade_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
+                min_notional = calculate_smart_minimum_trade_usdt(symbol, available_usdt=usdt_balance)
+                
+                # The required amount is the adaptive dynamic value, but must meet minimum notional
+                min_required = max(min_notional, dynamic_trade_value)
                 required_type = f"DYNAMIC_SIZING (${dynamic_trade_value:.2f})"
             else:
                 # Fallback to minimum check only
@@ -3009,23 +3030,15 @@ def apply_dynamic_sizing_and_minimum_check(position_result, signal, symbol, curr
     if hasattr(config, 'DYNAMIC_SIZING') and config.DYNAMIC_SIZING.get('base_amount'):
         print(f"\n💰 Applying DYNAMIC_SIZING configuration...")
         
-        # Get dynamic sizing parameters
-        base_amount = config.DYNAMIC_SIZING.get('base_amount', 50)
-        confidence_multiplier = config.DYNAMIC_SIZING.get('confidence_multiplier', 3.0)
-        max_amount = config.DYNAMIC_SIZING.get('max_amount', 200)
-        
-        # Calculate dynamic position value (no custom minimum)
-        dynamic_value = base_amount * (1 + (confidence_score * confidence_multiplier))
-        dynamic_value = min(max_amount, dynamic_value)  # Only apply max cap, no custom minimum
+        # Use the new adaptive dynamic trade value calculation
+        dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
         
         # Convert to quantity
         dynamic_quantity = dynamic_value / current_price
         
         print(f"   📊 Dynamic sizing calculation:")
-        print(f"   Base amount: ${base_amount}")
         print(f"   Confidence score: {confidence_score:.3f}")
-        print(f"   Confidence multiplier: {confidence_multiplier}")
-        print(f"   Calculated value: ${dynamic_value:.2f}")
+        print(f"   Calculated value: ${dynamic_value:.2f} (adaptive to ${usdt_balance:.2f} balance)")
         print(f"   Dynamic quantity: {dynamic_quantity:.8f}")
         print(f"   Original quantity: {position_result['quantity']:.8f}")
         
