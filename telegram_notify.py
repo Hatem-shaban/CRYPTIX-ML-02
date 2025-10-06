@@ -289,7 +289,7 @@ class TelegramNotifier:
             
         emoji_map = {
             'BUY': '🟢',
-            'SELL': '�', 
+            'SELL': '🔴', 
             'HOLD': '🟡',
             'SUCCESS': '✅',
             'FAILED': '❌',
@@ -350,7 +350,7 @@ class TelegramNotifier:
         value = trade_info.get('value', 0)
         status = trade_info.get('status', 'unknown')
         
-        if is_executed and status == 'success':
+        if is_executed and status.upper() == 'SUCCESS':
             # Use different colors and specific text for BUY vs SELL signals
             if signal.upper() == 'BUY':
                 emoji = self._get_emoji('BUY')  # 🟢 Green for BUY
@@ -360,11 +360,15 @@ class TelegramNotifier:
                 emoji = self._get_emoji('SELL')  # 🔵 Blue for SELL  
                 action_emoji = "🔵"
                 status_text = "SELL TRADE"
+            elif signal.upper() == 'SELL_PARTIAL':
+                emoji = self._get_emoji('SUCCESS')  # ✅ Green checkmark for partial sells
+                action_emoji = "✅"
+                status_text = "PARTIAL SELL SUCCESS"
             else:
                 emoji = self._get_emoji('SUCCESS')  # ✅ Default
                 action_emoji = "🚦"
                 status_text = "TRADE EXECUTED"
-        elif status == 'insufficient_funds':
+        elif status.lower() == 'insufficient_funds':
             emoji = self._get_emoji('WARNING')
             action_emoji = "⚠️"
             status_text = "INSUFFICIENT FUNDS"
