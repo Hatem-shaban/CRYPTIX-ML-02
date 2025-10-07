@@ -4637,30 +4637,71 @@ def start_trading_bot():
 def download_logs():
     """Create a zip file containing all CSV log files and send it to the user"""
     try:
+        # Ensure CSV files are set up
+        csv_files = setup_csv_logging()
+        
         # Create an in-memory zip file
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # Get all CSV files from logs directory
+            # Get logs directory
             logs_dir = Path('logs')
             if not logs_dir.exists():
                 return jsonify({'error': 'No log files found'}), 404
-                
+            
+            files_added = 0
+            
+            # First, add the main CSV files (trade_history, signal_history, error_log)
+            main_csv_files = ['trade_history.csv', 'signal_history.csv', 'error_log.csv']
+            for csv_filename in main_csv_files:
+                csv_file = logs_dir / csv_filename
+                if csv_file.exists() and csv_file.stat().st_size > 0:
+                    zf.write(csv_file, csv_filename)
+                    files_added += 1
+                    print(f"Added {csv_filename} to zip")
+                else:
+                    # Create empty file with headers if it doesn't exist
+                    print(f"Creating empty {csv_filename} with headers")
+                    zf.writestr(csv_filename, "")
+            
+            # Then add any other CSV files in the logs directory
             for csv_file in logs_dir.glob('*.csv'):
-                if csv_file.exists():
+                if csv_file.name not in main_csv_files and csv_file.exists():
                     # Add file to zip with relative path
                     zf.write(csv_file, csv_file.name)
+                    files_added += 1
+                    print(f"Added additional CSV: {csv_file.name}")
+            
+            # Add JSON files (like positions.json)
+            for json_file in logs_dir.glob('*.json'):
+                if json_file.exists():
+                    zf.write(json_file, json_file.name)
+                    files_added += 1
+                    print(f"Added JSON file: {json_file.name}")
+            
+            # Add log files (.log extension)
+            for log_file in logs_dir.glob('*.log'):
+                if log_file.exists():
+                    zf.write(log_file, log_file.name)
+                    files_added += 1
+                    print(f"Added log file: {log_file.name}")
+            
+            print(f"Total files added to zip: {files_added}")
         
         # Prepare the zip file for sending
         memory_file.seek(0)
+        
+        if files_added == 0:
+            return jsonify({'error': 'No log files available for download'}), 404
+            
         return send_file(
             memory_file,
             mimetype='application/zip',
             as_attachment=True,
-            download_name='trading_bot_logs.zip'
+            download_name=f'cryptix_logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
         )
     except Exception as e:
         print(f"Error creating log zip file: {e}")
-        return jsonify({'error': 'Failed to create zip file'}), 500
+        return jsonify({'error': f'Failed to create zip file: {str(e)}'}), 500
 
 @app.route('/')
 def home():
@@ -7107,6 +7148,14 @@ if __name__ == '__main__':
     
     # Initialize bot systems
     try:
+        # Initialize CSV logging system
+        print("📊 Initializing CSV logging system...")
+        try:
+            csv_files = setup_csv_logging()
+            print(f"✅ CSV files initialized: {', '.join(csv_files.keys())}")
+        except Exception as e:
+            print(f"⚠️ CSV logging initialization warning: {e}")
+        
         # Initialize API client once at startup
         if not bot_status.get('api_connected', False):
             print("🔧 Initializing API client...")
