@@ -6155,7 +6155,7 @@ def detect_dust_positions(min_usdt_value=None):
         print(f"❌ Error detecting dust positions: {e}")
         return []
 
-def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking"):
+def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking", send_notification=True):
     """Sell a percentage of an existing position"""
     try:
         if not client:
@@ -6315,8 +6315,8 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
             }
         )
         
-        # Send Telegram notification if available
-        if TELEGRAM_AVAILABLE:
+        # Send Telegram notification if available and requested
+        if TELEGRAM_AVAILABLE and send_notification:
             try:
                 # Reuse the same trade_info structure for notification
                 notification_trade_info = {
@@ -6900,11 +6900,12 @@ def execute_position_rebalancing():
                 print(f"   Will sell: {max_sell_qty:.8f} {asset}")
                 print(f"   Will preserve: {min_preserve:.8f} {asset}")
                 
-                # Execute partial sell
+                # Execute partial sell with notification disabled (summary will be sent instead)
                 result = sell_partial_position(
                     symbol,
                     (max_sell_qty / balance) * 100,  # Convert back to percentage of total balance
-                    f"RSI {asset_rsi:.1f} overbought signal (threshold: {rsi_threshold})"
+                    f"RSI {asset_rsi:.1f} overbought signal (threshold: {rsi_threshold})",
+                    send_notification=False  # Disable individual notification - summary will be sent
                 )
                 
                 if result["success"]:
