@@ -3023,31 +3023,49 @@ def update_trade_tracking(trade_result, profit_loss=0):
     except Exception as e:
         log_error_to_csv(str(e), "TRACKING_ERROR", "update_trade_tracking", "ERROR")
 
-def apply_dynamic_sizing_and_minimum_check(position_result, signal, symbol, current_price, usdt_balance, confidence_score):
+def apply_dynamic_sizing_and_minimum_check(position_result, signal, symbol, current_price, usdt_balance, confidence_score, available_coin_balance=None):
     """Apply DYNAMIC_SIZING configuration and intelligent minimum notional checking"""
     
     # Apply DYNAMIC_SIZING configuration override
     if hasattr(config, 'DYNAMIC_SIZING') and config.DYNAMIC_SIZING.get('base_amount'):
         print(f"\n💰 Applying DYNAMIC_SIZING configuration...")
         
-        # Use the new adaptive dynamic trade value calculation
-        dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
-        
-        # Convert to quantity
-        dynamic_quantity = dynamic_value / current_price
-        
-        print(f"   📊 Dynamic sizing calculation:")
-        print(f"   Confidence score: {confidence_score:.3f}")
-        print(f"   Calculated value: ${dynamic_value:.2f} (adaptive to ${usdt_balance:.2f} balance)")
-        print(f"   Dynamic quantity: {dynamic_quantity:.8f}")
-        print(f"   Original quantity: {position_result['quantity']:.8f}")
+        # For SELL orders, use available coin balance; for BUY orders, use USDT balance
+        if signal == "SELL" and available_coin_balance is not None:
+            # Calculate dynamic trade value based on available coin balance
+            dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
+            
+            # For SELL, limit quantity by available coin balance
+            # But calculate the desired quantity based on dynamic value
+            desired_quantity = dynamic_value / current_price
+            
+            # Cap at available balance
+            dynamic_quantity = min(desired_quantity, available_coin_balance)
+            
+            print(f"   📊 Dynamic sizing calculation (SELL):")
+            print(f"   Confidence score: {confidence_score:.3f}")
+            print(f"   Calculated value: ${dynamic_value:.2f}")
+            print(f"   Desired quantity: {desired_quantity:.8f}")
+            print(f"   Available balance: {available_coin_balance:.8f}")
+            print(f"   Dynamic quantity (capped): {dynamic_quantity:.8f} (${dynamic_quantity * current_price:.2f})")
+            print(f"   Original quantity: {position_result['quantity']:.8f}")
+        else:
+            # BUY order - use USDT balance
+            dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
+            dynamic_quantity = dynamic_value / current_price
+            
+            print(f"   📊 Dynamic sizing calculation (BUY):")
+            print(f"   Confidence score: {confidence_score:.3f}")
+            print(f"   Calculated value: ${dynamic_value:.2f} (adaptive to ${usdt_balance:.2f} balance)")
+            print(f"   Dynamic quantity: {dynamic_quantity:.8f}")
+            print(f"   Original quantity: {position_result['quantity']:.8f}")
         
         # Use the larger of the two calculations
         if dynamic_quantity > position_result['quantity']:
-            print(f"   ✅ Using DYNAMIC_SIZING (larger): ${dynamic_value:.2f}")
+            print(f"   ✅ Using DYNAMIC_SIZING (larger): ${dynamic_quantity * current_price:.2f}")
             position_result['quantity'] = dynamic_quantity
-            position_result['risk_amount'] = dynamic_value
-            position_result['risk_percentage'] = (dynamic_value / usdt_balance) * 100
+            position_result['risk_amount'] = dynamic_quantity * current_price
+            position_result['risk_percentage'] = (dynamic_quantity * current_price / usdt_balance) * 100
             position_result['sizing_method'] = 'DYNAMIC_SIZING'
         else:
             print(f"   📊 Keeping advanced sizing (larger): ${position_result['risk_amount']:.2f}")
@@ -3176,6 +3194,16 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     # Get confidence score from signal quality
                     confidence_score = bot_status.get('last_signal_quality', {}).get('confidence', 0.5)
                     
+                    # For SELL orders, get available coin balance
+                    available_coin_balance = None
+                    if signal == "SELL":
+                        base_asset = symbol[:-4] if symbol.endswith('USDT') else symbol.split('USDT')[0]
+                        for b in balance['balances']:
+                            if b['asset'] == base_asset:
+                                available_coin_balance = float(b['free'])
+                                break
+                        print(f"   Available {base_asset} balance for SELL: {available_coin_balance}")
+                    
                     # Calculate optimal position size
                     position_manager = get_position_manager()
                     position_result = position_manager.calculate_optimal_position_size(
@@ -3190,7 +3218,7 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     
                     # Apply DYNAMIC_SIZING and enhanced minimum checking
                     position_result, qty = apply_dynamic_sizing_and_minimum_check(
-                        position_result, signal, symbol, current_price, usdt_balance, confidence_score
+                        position_result, signal, symbol, current_price, usdt_balance, confidence_score, available_coin_balance
                     )
                     
                     # Comprehensive Risk Assessment
