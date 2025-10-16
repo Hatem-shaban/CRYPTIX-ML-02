@@ -6559,6 +6559,9 @@ def liquidate_dust_position(dust_position):
                 total_value = float(order['cummulativeQuoteQty'])
                 total_fee = sum([float(fill['commission']) for fill in order['fills']])
                 
+                # Initialize BNB conversion result (used in both paths)
+                bnb_to_usdt_result = None
+                
                 # Handle different quote currencies
                 if quote_asset == 'BNB':
                     print(f"✅ Dust liquidation successful to BNB!")
@@ -6566,7 +6569,6 @@ def liquidate_dust_position(dust_position):
                     print(f"   Fee: {total_fee:.8f} {asset}")
                     
                     # Optional: Convert BNB to USDT for consistency
-                    bnb_to_usdt_result = None
                     try:
                         if total_value > 0.001:  # Only if we got decent BNB amount
                             print(f"🔄 Converting {total_value:.8f} BNB to USDT...")
