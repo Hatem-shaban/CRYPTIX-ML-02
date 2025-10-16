@@ -3257,9 +3257,9 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         position_result['quantity'] *= multiplier
                         print(f"   📉 Position size adjusted by {multiplier:.0%} due to risk factors")
                     
-                    # Apply DYNAMIC_SIZING and enhanced minimum checking
+                    # Apply DYNAMIC_SIZING and enhanced minimum checking (AFTER risk adjustments)
                     position_result, qty = apply_dynamic_sizing_and_minimum_check(
-                        position_result, signal, symbol, current_price, usdt_balance, confidence_score
+                        position_result, signal, symbol, current_price, usdt_balance, confidence_score, available_coin_balance
                     )
                     
                     print(f"\n📊 Enhanced Position Sizing Results:")
