@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS trades (
     quantity DECIMAL(20, 8) NOT NULL,
     price DECIMAL(20, 8) NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
-    source VARCHAR(20) DEFAULT 'bot' CHECK (source IN ('bot', 'binance_history', 'manual')),
+    source VARCHAR(50) DEFAULT 'bot' CHECK (source IN ('bot', 'binance_history', 'manual', 'positions_json_import')),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

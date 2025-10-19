@@ -104,7 +104,15 @@ class DataMigration:
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Migration error: {e}")
+            error_msg = str(e)
+            if "value too long for type character varying" in error_msg:
+                logger.error("❌ Database schema issue detected!")
+                logger.error("💡 Run the fix_source_field_migration.sql file in your Supabase SQL Editor first:")
+                logger.error("   1. Open Supabase Dashboard > SQL Editor")
+                logger.error("   2. Run the contents of fix_source_field_migration.sql")
+                logger.error("   3. Then re-run this migration script")
+            else:
+                logger.error(f"❌ Migration error: {e}")
             return False
     
     def verify_migration(self):
@@ -184,10 +192,22 @@ def main():
             print("Your CRYPTIX-ML bot is now ready to use Supabase for position tracking.")
         else:
             print("\n❌ Migration failed. Check the logs for details.")
+            print("\n💡 Common issues:")
+            print("   - If you see 'value too long' errors, run fix_source_field_migration.sql in Supabase first")
+            print("   - Check your environment variables are set correctly")
+            print("   - Ensure your Supabase project is set up with the schema from supabase_schema.sql")
             sys.exit(1)
             
     except Exception as e:
+        error_msg = str(e)
         print(f"\n❌ Migration failed with error: {e}")
+        
+        if "value too long for type character varying" in error_msg:
+            print("\n💡 Schema fix needed:")
+            print("   1. Open Supabase Dashboard > SQL Editor")
+            print("   2. Run the contents of fix_source_field_migration.sql")
+            print("   3. Then re-run this migration script")
+        
         sys.exit(1)
 
 if __name__ == "__main__":
