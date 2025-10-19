@@ -112,6 +112,14 @@ def main():
     if not apply_render_optimizations():
         logger.error("❌ Failed to apply optimizations - continuing anyway")
     
+    # Run startup configuration (Supabase initialization)
+    try:
+        from render_startup import startup_configuration
+        if not startup_configuration():
+            logger.warning("⚠️ Startup configuration failed - continuing with fallback")
+    except Exception as e:
+        logger.warning(f"⚠️ Startup configuration error: {e} - continuing with fallback")
+    
     # Setup error handling
     setup_render_error_handling()
     

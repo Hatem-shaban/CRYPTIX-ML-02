@@ -26,7 +26,8 @@ try:
     from risk_manager import get_risk_manager
     from market_intelligence import get_market_intelligence
     from ml_predictor import EnhancedMLPredictor
-    from smart_position_tracker import get_position_tracker
+    # Use Supabase position tracker (with fallback to file-based)
+    from supabase_position_tracker import get_position_tracker
     from smart_profit_taker import get_smart_profit_taker
     
     ENHANCED_MODULES_AVAILABLE = True
