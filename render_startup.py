@@ -19,26 +19,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def check_environment():
-    """Check if all required environment variables are set"""
-    required_vars = [
-        'BINANCE_API_KEY',
-        'BINANCE_SECRET_KEY', 
-        'TELEGRAM_BOT_TOKEN',
-        'TELEGRAM_CHAT_ID',
+    """Check if Supabase environment variables are set"""
+    # Only check Supabase vars for startup - other vars are checked by their respective modules
+    required_supabase_vars = [
         'SUPABASE_URL',
         'SUPABASE_SERVICE_KEY'
     ]
     
-    missing_vars = []
-    for var in required_vars:
-        if not os.getenv(var):
-            missing_vars.append(var)
+    optional_vars = [
+        'BINANCE_API_KEY',
+        'BINANCE_SECRET_KEY', 
+        'TELEGRAM_BOT_TOKEN',
+        'TELEGRAM_CHAT_ID'
+    ]
     
-    if missing_vars:
-        logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
+    missing_supabase = []
+    for var in required_supabase_vars:
+        if not os.getenv(var):
+            missing_supabase.append(var)
+    
+    if missing_supabase:
+        logger.warning(f"⚠️ Supabase not configured: {', '.join(missing_supabase)}")
+        logger.info("📋 Will fall back to file-based position tracking")
         return False
     
-    logger.info("✅ All required environment variables are set")
+    logger.info("✅ Supabase environment variables are set")
+    
+    # Log status of optional vars (for debugging)
+    for var in optional_vars:
+        if os.getenv(var):
+            logger.info(f"✅ {var}: Configured")
+        else:
+            logger.info(f"⚠️ {var}: Not set (will be checked by respective modules)")
+    
     return True
 
 def initialize_supabase():
@@ -91,12 +104,13 @@ def initialize_supabase():
 
 def startup_configuration():
     """Run complete startup configuration"""
-    logger.info("🚀 Starting CRYPTIX-ML initialization...")
+    logger.info("🚀 Starting CRYPTIX-ML Supabase initialization...")
     
     # Step 1: Check environment
-    if not check_environment():
-        logger.error("❌ Environment check failed")
-        return False
+    supabase_available = check_environment()
+    if not supabase_available:
+        logger.info("📋 Supabase not available - bot will use file-based tracking")
+        return True  # Don't fail startup, just skip Supabase setup
     
     # Step 2: Initialize Supabase
     if not initialize_supabase():
