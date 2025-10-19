@@ -2712,8 +2712,12 @@ def signal_generator(df, symbol="BTCUSDT"):
             
             # First, check if we have sufficient USDT balance considering DYNAMIC_SIZING
             try:
-                # Get confidence score for DYNAMIC_SIZING calculation
-                confidence_score = bot_status.get('last_signal_quality', {}).get('confidence', 0.5)
+                # Get confidence score for DYNAMIC_SIZING calculation - prefer ML optimization confidence
+                confidence_score = 0.5  # Default
+                if 'last_optimization' in bot_status and bot_status['last_optimization'].get('confidence'):
+                    confidence_score = bot_status['last_optimization']['confidence']
+                elif 'last_signal_quality' in bot_status and bot_status['last_signal_quality'].get('confidence'):
+                    confidence_score = bot_status['last_signal_quality']['confidence']
                 
                 # Check balance with DYNAMIC_SIZING considerations
                 has_usdt, usdt_amount, usdt_msg = check_usdt_balance(symbol, confidence_score)
@@ -3032,25 +3036,31 @@ def apply_dynamic_sizing_and_minimum_check(position_result, signal, symbol, curr
         
         # For SELL orders, use available coin balance; for BUY orders, use USDT balance
         if signal == "SELL" and available_coin_balance is not None:
-            # Calculate dynamic trade value based on available coin balance
-            dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
+            # For SELL orders, calculate dynamic value WITHOUT adaptive balance constraints
+            # because we're selling existing holdings, not limited by USDT balance
+            base_amount = config.DYNAMIC_SIZING.get('base_amount', 50)
+            confidence_multiplier = config.DYNAMIC_SIZING.get('confidence_multiplier', 3.0)
+            max_amount = config.DYNAMIC_SIZING.get('max_amount', 200)
             
-            # For SELL, limit quantity by available coin balance
-            # But calculate the desired quantity based on dynamic value
+            # Calculate ideal dynamic position value (no adaptive constraints for SELL)
+            dynamic_value = base_amount * (1 + (confidence_score * confidence_multiplier))
+            dynamic_value = min(max_amount, dynamic_value)
+            
+            # Calculate desired quantity based on dynamic value
             desired_quantity = dynamic_value / current_price
             
-            # Cap at available balance
+            # Cap at available coin balance (safety check only)
             dynamic_quantity = min(desired_quantity, available_coin_balance)
             
             print(f"   📊 Dynamic sizing calculation (SELL):")
             print(f"   Confidence score: {confidence_score:.3f}")
-            print(f"   Calculated value: ${dynamic_value:.2f}")
+            print(f"   Calculated value: ${dynamic_value:.2f} (no USDT balance constraints)")
             print(f"   Desired quantity: {desired_quantity:.8f}")
             print(f"   Available balance: {available_coin_balance:.8f}")
             print(f"   Dynamic quantity (capped): {dynamic_quantity:.8f} (${dynamic_quantity * current_price:.2f})")
             print(f"   Original quantity: {position_result['quantity']:.8f}")
         else:
-            # BUY order - use USDT balance
+            # BUY order - use USDT balance with adaptive sizing
             dynamic_value = calculate_dynamic_trade_value(confidence_score, available_usdt=usdt_balance)
             dynamic_quantity = dynamic_value / current_price
             
@@ -3191,8 +3201,16 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     if 'volatility' in locals():
                         volatility = locals()['volatility']
                     
-                    # Get confidence score from signal quality
-                    confidence_score = bot_status.get('last_signal_quality', {}).get('confidence', 0.5)
+                    # Get confidence score from ML optimization (preferred) or signal quality (fallback)
+                    confidence_score = 0.5  # Default
+                    if 'last_optimization' in bot_status and bot_status['last_optimization'].get('confidence'):
+                        confidence_score = bot_status['last_optimization']['confidence']
+                        print(f"   🎯 Using ML optimization confidence: {confidence_score:.3f}")
+                    elif 'last_signal_quality' in bot_status and bot_status['last_signal_quality'].get('confidence'):
+                        confidence_score = bot_status['last_signal_quality']['confidence']
+                        print(f"   📊 Using signal quality confidence: {confidence_score:.3f}")
+                    else:
+                        print(f"   ⚠️ Using default confidence: {confidence_score:.3f}")
                     
                     # For SELL orders, get available coin balance
                     available_coin_balance = None
