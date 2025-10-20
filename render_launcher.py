@@ -137,12 +137,46 @@ def main():
         for key, value in flask_config.items():
             app.config[key] = value
         
-        # Initialize API client
+        # Initialize API client with emergency check
         logger.info("🔑 Initializing trading client...")
-        if initialize_client():
-            logger.info("✅ Trading client initialized successfully")
-        else:
-            logger.warning("⚠️ Trading client initialization failed - running in demo mode")
+        
+        # EMERGENCY CHECK: Skip API initialization if in emergency mode during ban
+        try:
+            import config
+            if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
+                # Check if ban is still active
+                from datetime import datetime
+                current_time = datetime.now().timestamp() * 1000
+                ban_until = 1760962139050  # Latest ban timestamp
+                
+                if current_time < ban_until:
+                    ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
+                    minutes_remaining = (ban_until - current_time) / 1000 / 60
+                    logger.warning(f"🚨 EMERGENCY: API ban active until {ban_lift_time.strftime('%H:%M:%S')}")
+                    logger.warning(f"⏰ {minutes_remaining:.1f} minutes remaining - SKIPPING API initialization")
+                    logger.warning("⚠️ Trading client initialization failed - running in demo mode")
+                    
+                    # Set demo mode in bot_status
+                    bot_status['api_connected'] = False
+                    bot_status['demo_mode'] = True
+                else:
+                    logger.info("✅ API ban has been lifted - proceeding with emergency rate limits")
+                    if initialize_client():
+                        logger.info("✅ Trading client initialized successfully")
+                    else:
+                        logger.warning("⚠️ Trading client initialization failed - running in demo mode")
+            else:
+                # Normal initialization if not in emergency mode
+                if initialize_client():
+                    logger.info("✅ Trading client initialized successfully")
+                else:
+                    logger.warning("⚠️ Trading client initialization failed - running in demo mode")
+        except Exception as e:
+            logger.warning(f"⚠️ Emergency check failed: {e} - attempting normal initialization")
+            if initialize_client():
+                logger.info("✅ Trading client initialized successfully")
+            else:
+                logger.warning("⚠️ Trading client initialization failed - running in demo mode")
         
         # Apply memory monitoring
         from render_memory_optimizer import RenderMemoryManager

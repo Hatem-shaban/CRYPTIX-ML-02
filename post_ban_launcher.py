@@ -15,7 +15,7 @@ load_dotenv()
 
 def check_ban_lifted():
     """Check if ban is completely lifted"""
-    ban_timestamp = 1760945336448  # Updated: 2025-10-20 10:28:56
+    ban_timestamp = 1760962139050  # Updated: 2025-10-20 15:08:59
     current_time = int(time.time() * 1000)
     return current_time >= ban_timestamp
 
@@ -82,7 +82,7 @@ def main():
     
     # Wait for ban to lift if still active
     while not check_ban_lifted():
-        ban_timestamp = 1760945336448  # Updated: 2025-10-20 10:28:56
+        ban_timestamp = 1760962139050  # Updated: 2025-10-20 15:08:59
         current_time = int(time.time() * 1000)
         time_left = (ban_timestamp - current_time) / 1000 / 60
         

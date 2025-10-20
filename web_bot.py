@@ -678,7 +678,7 @@ def initialize_client():
         if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
             # Check if ban is still active
             current_time = datetime.now().timestamp() * 1000
-            ban_until = 1760945336448  # Updated ban timestamp
+            ban_until = 1760962139050  # Updated ban timestamp (THIRD ban)
             
             if current_time < ban_until:
                 ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
@@ -7222,7 +7222,7 @@ if __name__ == '__main__':
             
             # Check if ban has been lifted
             current_time = datetime.now().timestamp() * 1000
-            ban_until = 1760945336448  # Updated ban timestamp
+            ban_until = 1760962139050  # Updated ban timestamp (THIRD ban)
             
             if current_time < ban_until:
                 ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
