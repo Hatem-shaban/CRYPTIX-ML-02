@@ -145,7 +145,6 @@ def main():
             import config
             if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
                 # Check if ban is still active
-                from datetime import datetime
                 current_time = datetime.now().timestamp() * 1000
                 ban_until = 1760962139050  # Latest ban timestamp
                 
