@@ -7192,6 +7192,35 @@ def api_force_ml_training():
         }), 500
 
 if __name__ == '__main__':
+    # EMERGENCY CHECK: Prevent startup if API ban is active
+    try:
+        from datetime import datetime
+        import config
+        
+        # Check if we're in emergency mode due to API ban
+        if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
+            print("\nEMERGENCY MODE DETECTED - Ultra-conservative rate limits active")
+            print("=" * 60)
+            
+            # Check if ban has been lifted
+            current_time = datetime.now().timestamp() * 1000
+            ban_until = 1760943416197  # The ban timestamp from the error
+            
+            if current_time < ban_until:
+                ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
+                minutes_remaining = (ban_until - current_time) / 1000 / 60
+                print(f"API BAN STILL ACTIVE")
+                print(f"Ban will lift at: {ban_lift_time.strftime('%H:%M:%S')}")
+                print(f"Time remaining: {minutes_remaining:.1f} minutes")
+                print("\nUse post_ban_launcher.py to start safely after ban lifts")
+                print("   Or wait and run this script again after the ban time")
+                exit(1)
+            else:
+                print("API ban has been lifted - proceeding with emergency rate limits")
+                print("Starting with ultra-conservative settings (30 calls/min)")
+    except Exception as e:
+        print(f"Warning: Could not check emergency status: {e}")
+    
     print("\n🚀 Starting CRYPTIX AI Trading Bot...")
     print("=" * 50)
     

@@ -183,12 +183,50 @@ MARKET_HOURS = {
 # Auto Trading Settings
 AUTO_TRADING = True  # Enable automatic trade execution
 
-# API Rate Limiting (NEW)
+# API Rate Limiting (EMERGENCY - Ultra Conservative)
+EMERGENCY_MODE = True  # Flag for emergency recovery mode
 API_RATE_LIMITS = {
-    'calls_per_minute': 1200,  # Binance limit
-    'calls_per_second': 10,    # Conservative limit
-    'weight_per_minute': 6000  # Weight-based limiting
+    'calls_per_minute': 30,    # SEVERELY reduced from 1200
+    'calls_per_second': 0.5,   # One call every 2 seconds  
+    'weight_per_minute': 200   # Much lower weight limit
 }
+DELAY_BETWEEN_CALLS = 2.0  # Emergency delay between API calls
+
+# Simple WebSocket price fallback (emergency only)
+def get_websocket_price(symbol):
+    """Simple WebSocket price getter for emergency use (avoid REST API calls)"""
+    try:
+        import websocket
+        import json
+        import threading
+        
+        price_cache = {}
+        
+        def on_message(ws, message):
+            data = json.loads(message)
+            if 's' in data and 'c' in data:  # symbol and close price
+                price_cache[data['s']] = float(data['c'])
+        
+        def on_error(ws, error):
+            print(f"WebSocket error: {error}")
+        
+        # Quick price fetch for emergency use
+        stream = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@ticker"
+        ws = websocket.WebSocketApp(stream, on_message=on_message, on_error=on_error)
+        
+        # Run for a few seconds to get price
+        def run_ws():
+            ws.run_forever()
+        
+        thread = threading.Thread(target=run_ws, daemon=True)
+        thread.start()
+        thread.join(timeout=5)  # Wait max 5 seconds
+        
+        return price_cache.get(symbol.upper())
+        
+    except Exception as e:
+        print(f"WebSocket fallback failed: {e}")
+        return None
 
 # Position Rebalancing Configuration
 REBALANCING = {
