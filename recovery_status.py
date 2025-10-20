@@ -10,8 +10,8 @@ from datetime import datetime
 def check_recovery_status():
     """Check if the API ban has been lifted and provide status update"""
     
-    # The ban timestamp from the original error
-    ban_until_timestamp = 1760943416197
+    # The ban timestamp from the original error (UPDATED - new ban occurred)
+    ban_until_timestamp = 1760945336448  # Updated: 2025-10-20 10:28:56
     current_timestamp = datetime.now().timestamp() * 1000
     
     print("\nCRYPTIX Recovery Status Check")

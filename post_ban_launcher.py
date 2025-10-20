@@ -15,7 +15,7 @@ load_dotenv()
 
 def check_ban_lifted():
     """Check if ban is completely lifted"""
-    ban_timestamp = 1760943416197
+    ban_timestamp = 1760945336448  # Updated: 2025-10-20 10:28:56
     current_time = int(time.time() * 1000)
     return current_time >= ban_timestamp
 
@@ -49,6 +49,16 @@ def safe_bot_startup():
         import config
         if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
             print("✅ Emergency mode confirmed in config.py")
+            
+            # Restore minimal safe API limits (not zero)
+            print("🔧 Restoring minimal safe API limits...")
+            config.API_RATE_LIMITS = {
+                'calls_per_minute': 30,    # Restore minimal safe limits
+                'calls_per_second': 0.5,   # Very conservative
+                'weight_per_minute': 200   # Very conservative
+            }
+            config.DELAY_BETWEEN_CALLS = 2.0
+            print("✅ Safe API limits restored (30 calls/min)")
         else:
             print("⚠️ Emergency mode not detected in config.py")
     except Exception as e:
@@ -72,7 +82,7 @@ def main():
     
     # Wait for ban to lift if still active
     while not check_ban_lifted():
-        ban_timestamp = 1760943416197
+        ban_timestamp = 1760945336448  # Updated: 2025-10-20 10:28:56
         current_time = int(time.time() * 1000)
         time_left = (ban_timestamp - current_time) / 1000 / 60
         

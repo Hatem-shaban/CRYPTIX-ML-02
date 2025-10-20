@@ -673,6 +673,24 @@ def get_sentiment_score(text):
 def initialize_client():
     global client, bot_status, api_key, api_secret
     try:
+        # EMERGENCY CHECK: Skip API initialization if in emergency mode during ban
+        import config
+        if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
+            # Check if ban is still active
+            current_time = datetime.now().timestamp() * 1000
+            ban_until = 1760945336448  # Updated ban timestamp
+            
+            if current_time < ban_until:
+                ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
+                minutes_remaining = (ban_until - current_time) / 1000 / 60
+                print(f"🚨 EMERGENCY: API ban active until {ban_lift_time.strftime('%H:%M:%S')}")
+                print(f"⏰ {minutes_remaining:.1f} minutes remaining - SKIPPING API initialization")
+                
+                # Set demo mode flags
+                bot_status['api_connected'] = False
+                bot_status['demo_mode'] = True
+                return False
+        
         # Skip if already connected and client exists
         if client and bot_status.get('api_connected', False):
             print("✅ API client already connected")
@@ -7204,7 +7222,7 @@ if __name__ == '__main__':
             
             # Check if ban has been lifted
             current_time = datetime.now().timestamp() * 1000
-            ban_until = 1760943416197  # The ban timestamp from the error
+            ban_until = 1760945336448  # Updated ban timestamp
             
             if current_time < ban_until:
                 ban_lift_time = datetime.fromtimestamp(ban_until / 1000)
@@ -7238,8 +7256,21 @@ if __name__ == '__main__':
         if not bot_status.get('api_connected', False):
             print("🔧 Initializing API client...")
             if not initialize_client():
-                print("❌ Failed to initialize API client at startup")
-                raise RuntimeError("API client init failed")
+                # Check if this is due to emergency mode
+                try:
+                    import config
+                    if hasattr(config, 'EMERGENCY_MODE') and config.EMERGENCY_MODE:
+                        print("⚠️ Trading client initialization failed - running in demo mode")
+                        print("🛡️ Emergency mode active - API calls disabled during ban period")
+                        bot_status['demo_mode'] = True
+                        bot_status['api_connected'] = False
+                        # Continue startup in demo mode
+                    else:
+                        print("❌ Failed to initialize API client at startup")
+                        raise RuntimeError("API client init failed")
+                except Exception as e:
+                    print("❌ Failed to initialize API client at startup")
+                    raise RuntimeError("API client init failed")
 
         # Initialize automated ML training scheduler
         try:

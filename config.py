@@ -186,11 +186,11 @@ AUTO_TRADING = True  # Enable automatic trade execution
 # API Rate Limiting (EMERGENCY - Ultra Conservative)
 EMERGENCY_MODE = True  # Flag for emergency recovery mode
 API_RATE_LIMITS = {
-    'calls_per_minute': 30,    # SEVERELY reduced from 1200
-    'calls_per_second': 0.5,   # One call every 2 seconds  
-    'weight_per_minute': 200   # Much lower weight limit
+    'calls_per_minute': 0,     # ZERO API calls during ban
+    'calls_per_second': 0,     # ZERO API calls during ban  
+    'weight_per_minute': 0     # ZERO weight during ban
 }
-DELAY_BETWEEN_CALLS = 2.0  # Emergency delay between API calls
+DELAY_BETWEEN_CALLS = 10.0  # Emergency delay between API calls
 
 # Simple WebSocket price fallback (emergency only)
 def get_websocket_price(symbol):
