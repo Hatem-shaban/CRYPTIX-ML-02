@@ -358,6 +358,62 @@ class SupabasePositionTracker:
                 'connected': False,
                 'error': str(e)
             }
+    
+    # Compatibility methods for existing code
+    def update_position(self, symbol: str, quantity: float, price: float, action: str):
+        """Compatibility method - matches old SmartPositionTracker signature"""
+        return self.add_trade(symbol, action, quantity, price)
+    
+    def get_position_info(self, symbol: str) -> Optional[Dict]:
+        """Get current position info for symbol - compatibility method"""
+        return self.get_position(symbol)
+    
+    def calculate_profit_potential(self, symbol: str, current_price: float) -> Dict:
+        """Calculate profit potential at current price - compatibility method"""
+        position = self.get_position(symbol)
+        
+        if not position or position['quantity'] <= 0:
+            return {
+                'has_position': False,
+                'profit_pct': 0.0,
+                'profit_usd': 0.0,
+                'is_profitable': False
+            }
+        
+        avg_buy_price = position['avg_buy_price']
+        quantity = position['quantity']
+        
+        profit_per_unit = current_price - avg_buy_price
+        total_profit = profit_per_unit * quantity
+        profit_pct = (profit_per_unit / avg_buy_price) * 100
+        
+        return {
+            'has_position': True,
+            'avg_buy_price': avg_buy_price,
+            'current_price': current_price,
+            'quantity': quantity,
+            'profit_per_unit': profit_per_unit,
+            'profit_usd': total_profit,
+            'profit_pct': profit_pct,
+            'is_profitable': profit_pct > 0,
+            'meets_minimum_profit': profit_pct >= 2.0  # Default minimum profit
+        }
+    
+    def should_allow_partial_sell(self, symbol: str, current_price: float, 
+                                 minimum_profit_pct: float = 2.0) -> Tuple[bool, str]:
+        """Determine if partial sell should be allowed based on profitability - compatibility method"""
+        profit_info = self.calculate_profit_potential(symbol, current_price)
+        
+        if not profit_info['has_position']:
+            return False, f"No tracked position for {symbol}"
+        
+        if not profit_info['is_profitable']:
+            return False, f"Would sell at loss: {profit_info['profit_pct']:.2f}% (avg buy: ${profit_info['avg_buy_price']:.4f}, current: ${current_price:.4f})"
+        
+        if profit_info['profit_pct'] < minimum_profit_pct:
+            return False, f"Profit too low: {profit_info['profit_pct']:.2f}% < {minimum_profit_pct}% minimum"
+        
+        return True, f"Profitable sell: {profit_info['profit_pct']:.2f}% profit (avg buy: ${profit_info['avg_buy_price']:.4f})"
 
 # Compatibility wrapper - can replace existing SmartPositionTracker
 class SmartPositionTracker(SupabasePositionTracker):
@@ -379,10 +435,6 @@ class SmartPositionTracker(SupabasePositionTracker):
         """Compatibility method - positions are auto-saved in Supabase"""
         logger.info("💾 Positions automatically saved to Supabase")
         return True
-    
-    def update_position(self, symbol: str, action: str, quantity: float, price: float):
-        """Compatibility method for existing code"""
-        return self.add_trade(symbol, action, quantity, price)
     
     def get_current_positions(self) -> Dict:
         """Compatibility method for existing code"""
