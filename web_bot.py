@@ -5865,29 +5865,70 @@ def view_trade_logs():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Trade History</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body { 
-            font-family: Arial, sans-serif; 
-            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
             background: #f5f5f5;
             padding: 10px;
+            line-height: 1.6;
         }
+        
         .container { 
             max-width: 1400px; 
             margin: 0 auto; 
             background: white; 
             padding: 15px; 
             border-radius: 10px;
-            overflow-x: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+        
+        .header {
+            margin-bottom: 20px;
+        }
+        
+        .back-link { 
+            display: inline-block; 
+            margin-bottom: 15px; 
+            padding: 10px 20px; 
+            background: #28a745; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 5px;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+        
+        .back-link:hover {
+            background: #218838;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            margin: 10px 0;
+            color: #333;
+        }
+        
+        .trade-count {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+        
+        /* Desktop Table View */
         .table-wrapper {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
-            margin: 0 -15px;
-            padding: 0 15px;
+            display: none;
         }
+        
         table { 
             width: 100%; 
             border-collapse: collapse; 
@@ -5895,105 +5936,305 @@ def view_trade_logs():
             font-size: 0.85rem;
             min-width: 800px;
         }
+        
         th, td { 
-            padding: 10px 12px; 
+            padding: 12px; 
             border: 1px solid #ddd; 
             text-align: left;
             white-space: nowrap;
         }
+        
         th { 
             background: #f8f9fa; 
-            font-weight: bold; 
+            font-weight: 600; 
             position: sticky; 
             top: 0;
             z-index: 1;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
         }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .back-link { 
-            display: inline-block; 
-            margin-bottom: 20px; 
-            padding: 12px 20px; 
-            background: #28a745; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px;
-            font-size: 0.9rem;
-        }
-        .back-link:hover {
-            background: #218838;
-        }
-        h1 {
-            font-size: 1.8rem;
-            margin: 15px 0;
-        }
-        .status-success { background: #d4edda; }
-        .status-simulated { background: #d1ecf1; }
-        .status-error { background: #f8d7da; }
-        .signal-buy { color: #28a745; font-weight: bold; }
-        .signal-sell { color: #dc3545; font-weight: bold; }
-        .signal-hold { color: #ffc107; font-weight: bold; }
         
+        tr:nth-child(even) { 
+            background: #f9f9f9; 
+        }
+        
+        /* Mobile Card View */
+        .cards-container {
+            display: grid;
+            gap: 12px;
+        }
+        
+        .trade-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .trade-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .trade-symbol {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .trade-time {
+            font-size: 0.75rem;
+            color: #666;
+        }
+        
+        .trade-details {
+            display: grid;
+            gap: 8px;
+        }
+        
+        .trade-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+        }
+        
+        .detail-label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            font-size: 0.9rem;
+            color: #333;
+            font-weight: 600;
+            text-align: right;
+        }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-success { 
+            background: #d4edda; 
+            color: #155724;
+        }
+        
+        .status-simulated { 
+            background: #d1ecf1; 
+            color: #0c5460;
+        }
+        
+        .status-error { 
+            background: #f8d7da; 
+            color: #721c24;
+        }
+        
+        /* Signal badges */
+        .signal-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        
+        .signal-buy { 
+            background: #28a745; 
+            color: white;
+        }
+        
+        .signal-sell { 
+            background: #dc3545; 
+            color: white;
+        }
+        
+        .signal-hold { 
+            background: #ffc107; 
+            color: #333;
+        }
+        
+        .no-trades {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+            font-size: 1rem;
+        }
+        
+        /* Tablet and Desktop */
+        @media (min-width: 769px) {
+            body {
+                padding: 20px;
+            }
+            
+            .container {
+                padding: 25px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .back-link {
+                padding: 12px 24px;
+                font-size: 1rem;
+            }
+            
+            .table-wrapper {
+                display: block;
+            }
+            
+            .cards-container {
+                display: none;
+            }
+        }
+        
+        /* Mobile optimizations */
         @media (max-width: 768px) {
             body {
-                padding: 5px;
+                padding: 8px;
             }
+            
             .container {
-                padding: 10px;
+                padding: 12px;
+                border-radius: 8px;
             }
-            h1 {
-                font-size: 1.5rem;
-                margin: 10px 0;
-            }
-            table {
-                font-size: 0.8rem;
-            }
-            th, td {
-                padding: 8px 10px;
-            }
+            
             .back-link {
                 width: 100%;
                 text-align: center;
-                box-sizing: border-box;
+                padding: 12px;
+                font-size: 0.95rem;
+            }
+            
+            h1 {
+                font-size: 1.3rem;
+                margin: 12px 0;
+            }
+            
+            .table-wrapper {
+                display: none;
+            }
+            
+            .cards-container {
+                display: grid;
+            }
+        }
+        
+        /* Very small phones */
+        @media (max-width: 360px) {
+            .trade-symbol {
+                font-size: 1rem;
+            }
+            
+            .detail-label,
+            .detail-value {
+                font-size: 0.8rem;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/logs" class="back-link">← Back to Logs</a>
-        <h1>📊 Trade History (All - Newest First)</h1>
+        <div class="header">
+            <a href="/logs" class="back-link">← Back to Logs</a>
+            <h1>📊 Trade History</h1>
+            {% if trades %}
+            <div class="trade-count">Showing {{ trades|length }} trades (newest first)</div>
+            {% endif %}
+        </div>
         
         {% if trades %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Time (Cairo)</th>
-                    <th>Signal</th>
-                    <th>Symbol</th>
-                    <th>Quantity</th>
-                    <th>Price</th>
-                    <th>Value</th>
-                    <th>Fee</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for trade in trades %}
-                <tr class="status-{{ trade.status.lower() if trade.status else 'unknown' }}">
-                    <td>{{ trade.cairo_time }}</td>
-                    <td class="signal-{{ trade.signal.lower() }}">{{ trade.signal }}</td>
-                    <td>{{ trade.symbol }}</td>
-                    <td>{{ "%.6f"|format(trade.quantity) }}</td>
-                    <td>${{ "%.2f"|format(trade.price) }}</td>
-                    <td>${{ "%.2f"|format(trade.value) }}</td>
-                    <td>${{ "%.4f"|format(trade.fee) }}</td>
-                    <td>{{ trade.status }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        
+        <!-- Desktop Table View -->
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time (Cairo)</th>
+                        <th>Signal</th>
+                        <th>Symbol</th>
+                        <th>Quantity</th>
+                        <th>Price</th>
+                        <th>Value</th>
+                        <th>Fee</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades %}
+                    <tr class="status-{{ trade.status.lower() if trade.status else 'unknown' }}">
+                        <td>{{ trade.cairo_time }}</td>
+                        <td class="signal-{{ trade.signal.lower() }}">{{ trade.signal }}</td>
+                        <td>{{ trade.symbol }}</td>
+                        <td>{{ "%.6f"|format(trade.quantity) }}</td>
+                        <td>${{ "%.2f"|format(trade.price) }}</td>
+                        <td>${{ "%.2f"|format(trade.value) }}</td>
+                        <td>${{ "%.4f"|format(trade.fee) }}</td>
+                        <td>{{ trade.status }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Mobile Card View -->
+        <div class="cards-container">
+            {% for trade in trades %}
+            <div class="trade-card">
+                <div class="trade-card-header">
+                    <div>
+                        <div class="trade-symbol">{{ trade.symbol }}</div>
+                        <div class="trade-time">{{ trade.cairo_time }}</div>
+                    </div>
+                    <span class="signal-badge signal-{{ trade.signal.lower() }}">{{ trade.signal }}</span>
+                </div>
+                <div class="trade-details">
+                    <div class="trade-detail-row">
+                        <span class="detail-label">Quantity</span>
+                        <span class="detail-value">{{ "%.6f"|format(trade.quantity) }}</span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="detail-label">Price</span>
+                        <span class="detail-value">${{ "%.2f"|format(trade.price) }}</span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="detail-label">Total Value</span>
+                        <span class="detail-value">${{ "%.2f"|format(trade.value) }}</span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="detail-label">Fee</span>
+                        <span class="detail-value">${{ "%.4f"|format(trade.fee) }}</span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value">
+                            <span class="status-badge status-{{ trade.status.lower() if trade.status else 'unknown' }}">
+                                {{ trade.status }}
+                            </span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
         {% else %}
-        <p>No trades found.</p>
+        <div class="no-trades">
+            <p>📭 No trades found.</p>
+        </div>
         {% endif %}
     </div>
 </body>
