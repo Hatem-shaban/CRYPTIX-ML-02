@@ -200,6 +200,60 @@ class SupabasePositionTracker:
             logger.error(f"❌ Error getting signal history: {e}")
             return []
     
+    def log_error(self, error_message: str, error_type: str = "GENERAL", 
+                  function_name: str = "", severity: str = "ERROR", bot_status: bool = False) -> bool:
+        """Log error to Supabase"""
+        try:
+            error_data = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'error_type': str(error_type),
+                'error_message': str(error_message),
+                'function_name': str(function_name),
+                'severity': str(severity),
+                'bot_status': bool(bot_status)
+            }
+            
+            self.supabase.table('errors').insert(error_data).execute()
+            logger.info(f"✅ Error logged to Supabase: {error_type} - {error_message}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error logging error to Supabase: {e}")
+            return False
+    
+    def get_error_history(self, limit: int = 50, severity: str = None, days: int = 0) -> List[Dict]:
+        """Get error history from Supabase"""
+        try:
+            query = self.supabase.table('errors').select('*').order('timestamp', desc=True)
+            
+            if severity:
+                query = query.eq('severity', severity)
+            
+            if days > 0:
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+                query = query.gte('timestamp', cutoff_date.isoformat())
+            
+            if limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            
+            # Format timestamps to Cairo time for display
+            errors = []
+            for error in response.data:
+                error_copy = error.copy()
+                if 'timestamp' in error_copy:
+                    utc_time = datetime.fromisoformat(error_copy['timestamp'].replace('Z', '+00:00'))
+                    cairo_time = utc_time.astimezone(timezone(timedelta(hours=2)))
+                    error_copy['cairo_time'] = cairo_time.strftime('%Y-%m-%d %H:%M:%S')
+                errors.append(error_copy)
+            
+            return errors
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting error history: {e}")
+            return []
+    
     def calculate_position_value(self, symbol: str, current_price: float) -> Dict:
         """Calculate current position value and P&L"""
         position = self.get_position(symbol)

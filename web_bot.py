@@ -448,8 +448,24 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
         print(f"Stack trace: {traceback.format_exc()}")
 
 def log_error_to_csv(error_message, error_type="GENERAL", function_name="", severity="ERROR"):
-    """Log errors to CSV file"""
+    """Log errors to CSV file and Supabase"""
     try:
+        # Log to Supabase first (preferred)
+        try:
+            position_tracker = get_position_tracker()
+            if hasattr(position_tracker, 'log_error'):
+                position_tracker.log_error(
+                    error_message=error_message,
+                    error_type=error_type,
+                    function_name=function_name,
+                    severity=severity,
+                    bot_status=bot_status.get('running', False)
+                )
+                print(f"✅ Error logged to Supabase: {error_type} - {error_message}")
+        except Exception as e:
+            print(f"⚠️ Failed to log error to Supabase: {e}, falling back to CSV only")
+        
+        # Also log to CSV as backup
         csv_files = setup_csv_logging()
         
         error_data = [
@@ -486,7 +502,7 @@ def log_error_to_csv(error_message, error_type="GENERAL", function_name="", seve
         # Replace original file
         temp_file.replace(csv_files['errors'])
             
-        print(f"Error logged to CSV: {error_type} - {error_message}")
+        print(f"✅ Error also logged to CSV backup")
         
         # Send Telegram notification for critical errors
         if TELEGRAM_AVAILABLE and severity in ['ERROR', 'CRITICAL']:
@@ -496,7 +512,7 @@ def log_error_to_csv(error_message, error_type="GENERAL", function_name="", seve
                 print(f"Telegram error notification failed: {telegram_error}")
             
     except Exception as e:
-        print(f"Error logging error to CSV: {e}")
+        print(f"❌ Error logging error: {e}")
 
 def get_supabase_trade_history(days=0):
     """Read and return trade history from Supabase."""
@@ -606,6 +622,48 @@ def get_csv_signal_history(limit=100):
     except Exception as e:
         log_error_to_csv(f"Error reading CSV signal history: {e}", 
                        "CSV_READ_ERROR", "get_csv_signal_history", "ERROR")
+        return []
+
+def get_supabase_error_history(limit=50):
+    """Read and return error history from Supabase."""
+    try:
+        position_tracker = get_position_tracker()
+        if hasattr(position_tracker, 'get_error_history'):
+            # Use the Supabase tracker to get error history
+            errors = position_tracker.get_error_history(limit=limit)
+            return errors
+        else:
+            # Fallback to CSV if not using Supabase tracker
+            return get_csv_error_history(limit=limit)
+            
+    except Exception as e:
+        print(f"Error reading Supabase error history: {e}")
+        return []
+
+def get_csv_error_history(limit=50):
+    """Read and return error history from CSV"""
+    try:
+        csv_files = setup_csv_logging()
+        
+        if not csv_files['errors'].exists():
+            return []
+        
+        # Read CSV file
+        df = pd.read_csv(csv_files['errors'])
+        
+        # Sort by timestamp (newest first) and limit
+        if not df.empty:
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                df = df.dropna(subset=['timestamp'])
+                df = df.sort_values('timestamp', ascending=False)
+            df = df.head(limit)
+            return df.to_dict('records')
+        
+        return []
+        
+    except Exception as e:
+        print(f"Error reading CSV error history: {e}")
         return []
 
 # Global bot status
@@ -6024,23 +6082,9 @@ def view_signal_logs():
 
 @app.route('/logs/errors')
 def view_error_logs():
-    """View error log CSV"""
+    """View error log from Supabase"""
     try:
-        csv_files = setup_csv_logging()
-        
-        if not csv_files['errors'].exists():
-            errors = []
-        else:
-            df = pd.read_csv(csv_files['errors'])
-            # Sort by timestamp to show newest first, then get last 50
-            if not df.empty and 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                df = df.dropna(subset=['timestamp'])
-                df = df.sort_values('timestamp', ascending=False).head(50)
-            else:
-                # Fallback: get last 50 errors and reverse order to show newest first
-                df = df.tail(50).iloc[::-1]
-            errors = df.to_dict('records')
+        errors = get_supabase_error_history(limit=50)
         
         return render_template_string("""
 <!DOCTYPE html>
@@ -6065,7 +6109,7 @@ def view_error_logs():
 <body>
     <div class="container">
         <a href="/logs" class="back-link">← Back to Logs</a>
-        <h1>❌ Error Log (Last 50 Errors - Newest First)</h1>
+        <h1>❌ Error Log (Last 50 - Newest First)</h1>
         
         {% if errors %}
         <table>
@@ -6081,7 +6125,7 @@ def view_error_logs():
             </thead>
             <tbody>
                 {% for error in errors %}
-                <tr class="{{ error.severity.lower() }}">
+                <tr class="{{ error.severity.lower() if error.severity else 'error' }}">
                     <td>{{ error.cairo_time }}</td>
                     <td>{{ error.severity }}</td>
                     <td>{{ error.error_type }}</td>
