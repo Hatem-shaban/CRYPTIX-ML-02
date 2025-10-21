@@ -488,7 +488,7 @@ def log_error_to_csv(error_message, error_type="GENERAL", function_name="", seve
     except Exception as e:
         print(f"Error logging error to CSV: {e}")
 
-def get_supabase_trade_history(days=30):
+def get_supabase_trade_history(days=0):
     """Read and return trade history from Supabase."""
     try:
         position_tracker = get_position_tracker()
@@ -5784,7 +5784,7 @@ def view_logs():
 @app.route('/logs/trades')
 def view_trade_logs():
     """View trade history from Supabase or CSV"""
-    trades = get_supabase_trade_history(days=30)  # Use Supabase by default
+    trades = get_supabase_trade_history(days=0)  # Use Supabase by default, no limit
     
     return render_template_string("""
 <!DOCTYPE html>
@@ -5887,7 +5887,7 @@ def view_trade_logs():
 <body>
     <div class="container">
         <a href="/logs" class="back-link">← Back to Logs</a>
-        <h1>📊 Trade History (Last 30 Days - Newest First)</h1>
+        <h1>📊 Trade History (All - Newest First)</h1>
         
         {% if trades %}
         <table>
@@ -5901,15 +5901,11 @@ def view_trade_logs():
                     <th>Value</th>
                     <th>Fee</th>
                     <th>Status</th>
-                    <th>RSI</th>
-                    <th>MACD</th>
-                    <th>Sentiment</th>
-                    <th>P&L</th>
                 </tr>
             </thead>
             <tbody>
                 {% for trade in trades %}
-                <tr class="status-{{ trade.status }}">
+                <tr class="status-{{ trade.status.lower() if trade.status else 'unknown' }}">
                     <td>{{ trade.cairo_time }}</td>
                     <td class="signal-{{ trade.signal.lower() }}">{{ trade.signal }}</td>
                     <td>{{ trade.symbol }}</td>
@@ -5918,16 +5914,12 @@ def view_trade_logs():
                     <td>${{ "%.2f"|format(trade.value) }}</td>
                     <td>${{ "%.4f"|format(trade.fee) }}</td>
                     <td>{{ trade.status }}</td>
-                    <td>{{ "%.1f"|format(trade.rsi) }}</td>
-                    <td>{{ trade.macd_trend }}</td>
-                    <td>{{ trade.sentiment }}</td>
-                    <td>${{ "%.2f"|format(trade.profit_loss) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% else %}
-        <p>No trades found in the last 30 days.</p>
+        <p>No trades found.</p>
         {% endif %}
     </div>
 </body>
