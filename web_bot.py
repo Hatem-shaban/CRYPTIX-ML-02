@@ -359,7 +359,7 @@ last_signals = {}
 last_signal_time = None  # Track when ANY signal was last generated globally
 
 def log_signal_to_csv(signal, price, indicators, reason=""):
-    """Log trading signal to CSV file with enhanced duplicate prevention"""
+    """Log trading signal to CSV file and Supabase with enhanced duplicate prevention"""
     global last_signals, last_signal_time
     try:
         symbol = indicators.get('symbol', 'UNKNOWN')
@@ -408,6 +408,16 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
         last_signals[symbol_key] = current_time
         last_signals[signal_key] = current_time
         
+        # Log to Supabase first (preferred)
+        try:
+            position_tracker = get_position_tracker()
+            if hasattr(position_tracker, 'log_signal'):
+                position_tracker.log_signal(signal, symbol, price, indicators, reason)
+                print(f"✅ Signal logged to Supabase: {signal} for {symbol} at ${price:.4f} - {reason}")
+        except Exception as e:
+            print(f"⚠️ Failed to log signal to Supabase: {e}, falling back to CSV")
+        
+        # Also log to CSV as backup
         csv_files = setup_csv_logging()
         
         signal_data = [
@@ -429,10 +439,10 @@ def log_signal_to_csv(signal, price, indicators, reason=""):
             writer = csv.writer(f)
             writer.writerow(signal_data)
             
-        print(f"✅ Signal logged: {signal} for {symbol} at ${price:.4f} - {reason}")  # Debug confirmation
+        print(f"✅ Signal also logged to CSV backup")
             
     except Exception as e:
-        print(f"❌ Error logging signal to CSV: {e}")
+        print(f"❌ Error logging signal: {e}")
         # Log the error for debugging
         import traceback
         print(f"Stack trace: {traceback.format_exc()}")
@@ -539,57 +549,63 @@ def get_csv_trade_history(days=30):
         
         # Filter by date if needed
         if days > 0 and not df.empty:
-            try:
-                # Handle different timestamp formats
-                if 'timestamp' in df.columns:
-                    # Try to parse the timestamp column, removing timezone info to avoid warnings
-                    df['timestamp'] = pd.to_datetime(df['timestamp'].str.replace(r' [A-Z]{3,4}$', '', regex=True), errors='coerce')
-                    
-                    # Remove rows where timestamp parsing failed
-                    df = df.dropna(subset=['timestamp'])
-                    
-                    if not df.empty:
-                        # Create cutoff date with timezone awareness
-                        cutoff_date = get_cairo_time() - pd.Timedelta(days=days)
-                        
-                        # If timestamps are timezone-naive, make them timezone-aware for comparison
-                        if df['timestamp'].dt.tz is None:
-                            # Assume UTC if no timezone info
-                            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-                        
-                        # Convert cutoff_date to the same timezone as df timestamps
-                        if cutoff_date.tzinfo is None:
-                            cutoff_date = CAIRO_TZ.localize(cutoff_date)
-                        
-                        # Filter by date
-                        df = df[df['timestamp'] >= cutoff_date]
-                        
-            except Exception as date_error:
-                log_error_to_csv(f"Date filtering error in CSV read: {date_error}", 
-                               "CSV_DATE_ERROR", "get_csv_trade_history", "WARNING")
-                # Continue without date filtering if there's an error
+            cutoff_date = datetime.now() - timedelta(days=days)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df[df['timestamp'] >= cutoff_date]
         
-        # Sort by timestamp to show newest first (similar to Signal History)
-        if not df.empty and 'timestamp' in df.columns:
-            try:
-                # Ensure timestamp column is properly parsed
-                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                df = df.dropna(subset=['timestamp'])
-                # Sort by timestamp, newest first
-                df = df.sort_values('timestamp', ascending=False)
-            except Exception as sort_error:
-                # Fallback: reverse the order to show newest first
-                df = df.iloc[::-1]
-        else:
-            # Fallback: reverse the order to show newest first
-            df = df.iloc[::-1]
+        # Sort by timestamp (newest first) and convert to records
+        if not df.empty:
+            df = df.sort_values('timestamp', ascending=False)
+            return df.to_dict('records')
         
-        # Convert to list of dictionaries
-        return df.to_dict('records')
+        return []
         
     except Exception as e:
         log_error_to_csv(f"Error reading CSV trade history: {e}", 
                        "CSV_READ_ERROR", "get_csv_trade_history", "ERROR")
+        return []
+
+def get_supabase_signal_history(limit=100):
+    """Read and return signal history from Supabase."""
+    try:
+        position_tracker = get_position_tracker()
+        if hasattr(position_tracker, 'get_signal_history'):
+            # Use the Supabase tracker to get signal history
+            signals = position_tracker.get_signal_history(limit=limit)
+            return signals
+        else:
+            # Fallback to CSV if not using Supabase tracker
+            return get_csv_signal_history(limit=limit)
+            
+    except Exception as e:
+        log_error_to_csv(f"Error reading Supabase signal history: {e}", 
+                       "SUPABASE_READ_ERROR", "get_supabase_signal_history", "ERROR")
+        return []
+
+def get_csv_signal_history(limit=100):
+    """Read and return signal history from CSV"""
+    try:
+        csv_files = setup_csv_logging()
+        
+        if not csv_files['signals'].exists():
+            return []
+        
+        # Read CSV file
+        df = pd.read_csv(csv_files['signals'])
+        
+        # Sort by timestamp (newest first) and limit
+        if not df.empty:
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.sort_values('timestamp', ascending=False)
+            df = df.head(limit)
+            return df.to_dict('records')
+        
+        return []
+        
+    except Exception as e:
+        log_error_to_csv(f"Error reading CSV signal history: {e}", 
+                       "CSV_READ_ERROR", "get_csv_signal_history", "ERROR")
         return []
 
 # Global bot status
@@ -5928,22 +5944,9 @@ def view_trade_logs():
 
 @app.route('/logs/signals')
 def view_signal_logs():
-    """View signal history CSV"""
+    """View signal history from Supabase"""
     try:
-        csv_files = setup_csv_logging()
-        
-        if not csv_files['signals'].exists():
-            signals = []
-        else:
-            df = pd.read_csv(csv_files['signals'])
-            # Sort by timestamp column to show newest first, then get last 100
-            if not df.empty and 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df = df.sort_values('timestamp', ascending=False).head(100)
-            else:
-                # Fallback: get last 100 signals and reverse order
-                df = df.tail(100).iloc[::-1]
-            signals = df.to_dict('records')
+        signals = get_supabase_signal_history(limit=100)
         
         return render_template_string("""
 <!DOCTYPE html>
@@ -5971,7 +5974,7 @@ def view_signal_logs():
 <body>
     <div class="container">
         <a href="/logs" class="back-link">← Back to Logs</a>
-        <h1>📈 Signal History (Latest 100 Signals - Newest First)</h1>
+        <h1>📈 Signal History (Latest 100 - Newest First)</h1>
         
         {% if signals %}
         <table>
@@ -6000,10 +6003,10 @@ def view_signal_logs():
                     <td>{{ "%.1f"|format(signal.rsi) }}</td>
                     <td>{{ "%.6f"|format(signal.macd) }}</td>
                     <td>{{ signal.macd_trend }}</td>
-                    <td class="sentiment-{{ signal.sentiment }}">{{ signal.sentiment }}</td>
+                    <td class="sentiment-{{ signal.sentiment.lower() if signal.sentiment else 'neutral' }}">{{ signal.sentiment }}</td>
                     <td>${{ "%.2f"|format(signal.sma5) }}</td>
                     <td>${{ "%.2f"|format(signal.sma20) }}</td>
-                    <td style="font-size: 0.7rem;">{{ signal.reason[:100] }}...</td>
+                    <td style="font-size: 0.7rem;">{{ signal.reason[:100] if signal.reason else '' }}...</td>
                 </tr>
                 {% endfor %}
             </tbody>

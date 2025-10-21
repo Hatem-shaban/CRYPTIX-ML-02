@@ -142,6 +142,64 @@ class SupabasePositionTracker:
             logger.error(f"❌ Error getting trade history: {e}")
             return []
     
+    def log_signal(self, signal: str, symbol: str, price: float, indicators: Dict, reason: str = "") -> bool:
+        """Log trading signal to Supabase"""
+        try:
+            signal_data = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'signal': signal,
+                'symbol': symbol,
+                'price': float(price),
+                'rsi': float(indicators.get('rsi', 0)),
+                'macd': float(indicators.get('macd', 0)),
+                'macd_trend': str(indicators.get('macd_trend', '')),
+                'sentiment': str(indicators.get('sentiment', '')),
+                'sma5': float(indicators.get('sma5', 0)),
+                'sma20': float(indicators.get('sma20', 0)),
+                'reason': str(reason)
+            }
+            
+            self.supabase.table('signals').insert(signal_data).execute()
+            logger.info(f"✅ Signal logged to Supabase: {signal} for {symbol}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error logging signal to Supabase: {e}")
+            return False
+    
+    def get_signal_history(self, symbol: str = None, limit: int = 100, days: int = 0) -> List[Dict]:
+        """Get signal history from Supabase"""
+        try:
+            query = self.supabase.table('signals').select('*').order('timestamp', desc=True)
+            
+            if symbol:
+                query = query.eq('symbol', symbol)
+            
+            if days > 0:
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+                query = query.gte('timestamp', cutoff_date.isoformat())
+            
+            if limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            
+            # Format timestamps to Cairo time for display
+            signals = []
+            for signal in response.data:
+                signal_copy = signal.copy()
+                if 'timestamp' in signal_copy:
+                    utc_time = datetime.fromisoformat(signal_copy['timestamp'].replace('Z', '+00:00'))
+                    cairo_time = utc_time.astimezone(timezone(timedelta(hours=2)))
+                    signal_copy['cairo_time'] = cairo_time.strftime('%Y-%m-%d %H:%M:%S')
+                signals.append(signal_copy)
+            
+            return signals
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting signal history: {e}")
+            return []
+    
     def calculate_position_value(self, symbol: str, current_price: float) -> Dict:
         """Calculate current position value and P&L"""
         position = self.get_position(symbol)
