@@ -6,7 +6,7 @@ Smart replacement for file-based position tracking
 import os
 import json
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 from supabase import create_client, Client
@@ -120,13 +120,17 @@ class SupabasePositionTracker:
         """Get position for specific symbol"""
         return self.positions.get(symbol)
     
-    def get_trade_history(self, symbol: str = None, limit: int = 100) -> List[Dict]:
+    def get_trade_history(self, symbol: str = None, limit: int = 100, days: int = 30) -> List[Dict]:
         """Get trade history from Supabase"""
         try:
             query = self.supabase.table('trades').select('*').order('timestamp', desc=True)
             
             if symbol:
                 query = query.eq('symbol', symbol)
+
+            if days > 0:
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+                query = query.gte('timestamp', cutoff_date.isoformat())
             
             if limit:
                 query = query.limit(limit)

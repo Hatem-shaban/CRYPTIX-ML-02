@@ -488,6 +488,44 @@ def log_error_to_csv(error_message, error_type="GENERAL", function_name="", seve
     except Exception as e:
         print(f"Error logging error to CSV: {e}")
 
+def get_supabase_trade_history(days=30):
+    """Read and return trade history from Supabase."""
+    try:
+        position_tracker = get_position_tracker()
+        if hasattr(position_tracker, 'get_trade_history'):
+            # Use the Supabase tracker to get history
+            history = position_tracker.get_trade_history(days=days)
+            
+            # The data from Supabase is a list of dicts.
+            # We need to ensure it has the fields the template expects.
+            processed_history = []
+            for trade in history:
+                # Basic field mapping
+                processed_trade = {
+                    'timestamp': trade.get('timestamp'),
+                    'cairo_time': format_cairo_time(pd.to_datetime(trade.get('timestamp'))),
+                    'signal': trade.get('action'),
+                    'symbol': trade.get('symbol'),
+                    'quantity': float(trade.get('quantity', 0)),
+                    'price': float(trade.get('price', 0)),
+                    'status': trade.get('status', 'success'), # Assume success if not specified
+                    'fee': float(trade.get('fee', 0)),
+                    'order_id': trade.get('order_id', '')
+                }
+                # Calculate 'value'
+                processed_trade['value'] = processed_trade['quantity'] * processed_trade['price']
+                processed_history.append(processed_trade)
+            
+            return processed_history
+        else:
+            # Fallback to CSV if not using Supabase tracker
+            return get_csv_trade_history(days=days)
+            
+    except Exception as e:
+        log_error_to_csv(f"Error reading Supabase trade history: {e}", 
+                       "SUPABASE_READ_ERROR", "get_supabase_trade_history", "ERROR")
+        return []
+
 def get_csv_trade_history(days=30):
     """Read and return trade history from CSV"""
     try:
@@ -5745,8 +5783,8 @@ def view_logs():
 
 @app.route('/logs/trades')
 def view_trade_logs():
-    """View trade history CSV"""
-    trades = get_csv_trade_history(30)  # Last 30 days
+    """View trade history from Supabase or CSV"""
+    trades = get_supabase_trade_history(days=30)  # Use Supabase by default
     
     return render_template_string("""
 <!DOCTYPE html>
