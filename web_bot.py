@@ -5817,11 +5817,11 @@ def view_logs():
                 </div>
                 <div class="stats-grid">
                     <div class="stat-item">
-                        <span class="stat-label">Total Trades Logged</span>
-                        <span class="stat-value">{{ total_trades }}</span>
+                        <span class="stat-label">Data Storage</span>
+                        <span class="stat-value">Supabase Cloud</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">CSV Files Location</span>
+                        <span class="stat-label">Backup Location</span>
                         <span class="stat-value">/logs/</span>
                     </div>
                     <div class="stat-item">
@@ -5853,7 +5853,7 @@ def view_logs():
     </script>
 </body>
 </html>
-    """, total_trades=len(get_csv_trade_history()), current_time=format_cairo_time())
+    """, current_time=format_cairo_time())
 
 @app.route('/logs/trades')
 def view_trade_logs():
