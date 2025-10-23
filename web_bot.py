@@ -4306,6 +4306,7 @@ def trading_loop():
             print("\n🎯 Analyzing top opportunities from startup scan...")
             max_startup_targets = 3  # Analyze top 3 opportunities
             signals_generated = 0
+            best_trade_executed = False
             
             for i, opportunity in enumerate(scan_results[:max_startup_targets]):
                 current_symbol = opportunity['symbol']
@@ -4340,8 +4341,53 @@ def trading_loop():
                         update_bot_status_common(current_symbol, signal, current_price, df, current_score)
                     
                     signals_generated += 1
+                    
+                    # ===== EXECUTE TRADE FOR BEST OPPORTUNITY =====
+                    # Execute trade only for the best opportunity (first one) with actionable signal
+                    if i == 0 and not best_trade_executed and signal in ['BUY', 'SELL']:
+                        print(f"\n🎯 STARTUP TRADE: Executing best opportunity from startup scan")
+                        print(f"   Symbol: {current_symbol}")
+                        print(f"   Signal: {signal}")
+                        print(f"   Score: {current_score:.1f}")
+                        print(f"   Price: ${current_price:.4f}")
+                        
+                        try:
+                            # Execute the trade
+                            trade_result = execute_trade(signal, current_symbol)
+                            
+                            if trade_result and "executed" in trade_result.lower():
+                                print(f"✅ STARTUP TRADE EXECUTED: {trade_result}")
+                                best_trade_executed = True
+                                
+                                # Send Telegram notification for startup trade
+                                if TELEGRAM_AVAILABLE:
+                                    try:
+                                        notify_trade({
+                                            'signal': signal,
+                                            'symbol': current_symbol,
+                                            'price': current_price,
+                                            'timestamp': format_cairo_time(),
+                                            'status': 'success',
+                                            'context': 'STARTUP_SCAN'
+                                        }, is_executed=True)
+                                    except Exception as telegram_error:
+                                        print(f"⚠️ Telegram notification failed: {telegram_error}")
+                            else:
+                                print(f"⚠️ STARTUP TRADE RESULT: {trade_result}")
+                                
+                        except Exception as trade_error:
+                            print(f"❌ STARTUP TRADE FAILED: {trade_error}")
+                            log_error_to_csv(
+                                f"Startup trade failed for {current_symbol}: {trade_error}",
+                                "STARTUP_TRADE_ERROR",
+                                "start_trading_bot",
+                                "ERROR"
+                            )
+                    # ===== END STARTUP TRADE EXECUTION =====
             
             print(f"\n✨ Startup signal generation complete - Analyzed {signals_generated} opportunities")
+            if best_trade_executed:
+                print(f"🎯 Best opportunity trade executed successfully")
         
     except Exception as e:
         print(f"⚠️ Startup scan failed: {e}")
