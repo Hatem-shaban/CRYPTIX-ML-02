@@ -206,6 +206,37 @@ def main():
         logger.info(f"🌐 Starting Flask server on port {port}")
         logger.info("✅ CRYPTIX-ML Bot ready for Render deployment")
         
+        # ===== AUTOSTART: Start trading bot automatically on deployment =====
+        try:
+            # Check if autostart is enabled (default: True for Render)
+            autostart_enabled = os.getenv('AUTOSTART_BOT', 'True').lower() in ['true', '1', 'yes', 'on']
+            
+            if autostart_enabled:
+                logger.info("🤖 AUTOSTART: Starting trading bot automatically...")
+                
+                # Import the start function
+                from web_bot import start_trading_bot, bot_status
+                
+                # Check if bot is not already running
+                if not bot_status.get('running', False):
+                    # Start the bot in a separate thread
+                    import threading
+                    bot_thread = threading.Thread(target=start_trading_bot, daemon=True)
+                    bot_thread.start()
+                    
+                    logger.info("✅ AUTOSTART: Trading bot started successfully")
+                    logger.info("📊 Bot is now monitoring markets and executing trades")
+                else:
+                    logger.info("ℹ️ AUTOSTART: Bot already running, skipping autostart")
+            else:
+                logger.info("ℹ️ AUTOSTART: Disabled (set AUTOSTART_BOT=True to enable)")
+                logger.info("💡 Use /start endpoint or web interface to start manually")
+                
+        except Exception as autostart_error:
+            logger.error(f"❌ AUTOSTART failed: {autostart_error}")
+            logger.warning("⚠️ Bot can still be started manually via /start endpoint")
+        # ===== END AUTOSTART =====
+        
         # Run the Flask app
         app.run(
             host='0.0.0.0',

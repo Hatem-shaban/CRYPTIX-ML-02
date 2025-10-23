@@ -37,3 +37,18 @@ ML_ENABLED = "True"
 # Render-specific optimizations
 RENDER_DEPLOYMENT = "True"
 OPTIMIZE_MEMORY = "True"
+
+# ===== AUTOSTART CONFIGURATION =====
+# Controls whether the trading bot starts automatically after deployment
+#
+# AUTOSTART_BOT = "True"  (default)
+#   - Bot starts automatically when Render deploys/restarts
+#   - Begins monitoring and trading immediately
+#   - Recommended for hands-free operation
+#
+# AUTOSTART_BOT = "False"
+#   - Bot waits for manual start via web interface
+#   - Access /start endpoint or use the web UI
+#   - Useful for testing or manual control
+#
+AUTOSTART_BOT = "True"
