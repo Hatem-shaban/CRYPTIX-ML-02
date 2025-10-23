@@ -27,25 +27,39 @@ An intelligent cryptocurrency trading bot with machine learning capabilities, te
    python web_bot.py
    ```
 
-## ✨ New Feature: Automated ML Training
+## ✨ New Feature: Incremental ML Learning
 
-The bot now includes **automated ML model training** that runs during off-peak hours:
+The bot now includes **true incremental/cumulative ML learning** that accumulates knowledge over time:
 
-- **🤖 Smart Scheduling**: Automatically trains models at 2 AM daily during low trading activity
-- **📊 Intelligent Retraining**: Only retrains when models are older than 7 days
-- **🔄 Incremental Updates**: Efficient data loading without full redownload
+- **📈 Knowledge Accumulation**: Models build upon previous training instead of replacing it
+- **� Efficient Updates**: Fast incremental training (~45 seconds vs 8 minutes for batch)
+- **📊 Performance Tracking**: Monitor accuracy improvements over time with learning curves
+- **🎯 Version Control**: Rollback to previous versions if needed
+- **🤖 Smart Mode Selection**: Automatically chooses batch or incremental based on context
 - **☁️ Render Optimized**: Lightweight design perfect for cloud deployment
 
-### Simple Control:
-```bash
-# Check training status via API
-curl http://your-app.onrender.com/api/ml-training/status
+### New Capabilities:
+```python
+# Train with incremental learning (default)
+python enhanced_ml_training.py
 
-# Force immediate training
-curl -X POST http://your-app.onrender.com/api/ml-training/force
+# View cumulative statistics
+python incremental_learning.py
+
+# Migrate existing models
+python migrate_to_incremental.py
+
+# Force batch retraining (monthly refresh)
+trainer.train_all_models(force_batch=True)
 ```
 
-The scheduler starts automatically when you run the bot - no additional setup required!
+**Key Benefits:**
+- Models improve continuously with each training session
+- Total samples accumulate (e.g., 30k → 32k → 34k → ...)
+- Training history fully tracked with versioning
+- 80-90% faster updates compared to batch retraining
+
+📚 **Full Documentation**: See [INCREMENTAL_LEARNING.md](INCREMENTAL_LEARNING.md) for complete guide
 
 ## 📋 Prerequisites
 

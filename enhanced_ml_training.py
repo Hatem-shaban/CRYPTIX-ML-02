@@ -1,6 +1,7 @@
 """
 Enhanced ML Training Module for CRYPTIX Trading Bot
 Handles training with comprehensive historical data from Binance
+Supports both batch and incremental/cumulative learning
 """
 
 import pandas as pd
@@ -18,6 +19,14 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import centralized model paths
 from model_paths import MODEL_PATHS
+
+# Import incremental learning system
+try:
+    from incremental_learning import IncrementalMLTrainer, HybridTrainingManager
+    INCREMENTAL_AVAILABLE = True
+except ImportError:
+    INCREMENTAL_AVAILABLE = False
+    print("⚠️ Incremental learning not available")
 
 # Safe ML imports
 try:
@@ -57,14 +66,27 @@ logger = logging.getLogger(__name__)
 class EnhancedMLTrainer:
     """
     Enhanced ML Training Manager using comprehensive historical data
+    Supports both batch and incremental/cumulative learning
     """
     
-    def __init__(self):
+    def __init__(self, use_incremental: bool = True):
         self.models = {}
         self.scalers = {}
         self.feature_selectors = {}
         self.training_history = []
         self.model_performance = {}
+        self.use_incremental = use_incremental and INCREMENTAL_AVAILABLE
+        
+        # Initialize incremental learning system
+        if self.use_incremental:
+            self.incremental_trainer = IncrementalMLTrainer()
+            self.hybrid_manager = HybridTrainingManager()
+            logger.info("✅ Incremental learning system enabled")
+        else:
+            self.incremental_trainer = None
+            self.hybrid_manager = None
+            if use_incremental:
+                logger.warning("⚠️ Incremental learning requested but not available")
         
         # Initialize data cleaner
         if DATA_CLEANER_AVAILABLE:
@@ -362,8 +384,9 @@ class EnhancedMLTrainer:
         logger.info(f"✅ Prepared {len(feature_df.columns)} features for {len(feature_df)} samples")
         return feature_df, list(feature_df.columns)
     
-    def train_trend_prediction_model(self, df: pd.DataFrame) -> Dict:
-        """Train price trend prediction model"""
+    def train_trend_prediction_model(self, df: pd.DataFrame, 
+                                     force_batch: bool = False) -> Dict:
+        """Train price trend prediction model with incremental learning support"""
         logger.info("🎯 Training trend prediction model...")
         
         try:
@@ -391,6 +414,30 @@ class EnhancedMLTrainer:
             # Validate and clean features if data cleaner is available
             if self.data_cleaner:
                 X, y = self.data_cleaner.validate_features(X, y)
+            
+            # Use incremental learning if enabled and appropriate
+            if self.use_incremental and not force_batch:
+                logger.info("📈 Using incremental learning approach")
+                
+                # Prepare data for incremental training
+                train_df = pd.concat([X, y.rename('target')], axis=1)
+                
+                result = self.hybrid_manager.train_smart(
+                    train_df, 'trend', 
+                    feature_cols=list(X.columns),
+                    target_col='target',
+                    force_batch=force_batch
+                )
+                
+                if result['success']:
+                    logger.info(f"✅ Incremental trend model trained - Samples: {result['total_samples_seen']:,}")
+                    return result
+                else:
+                    logger.warning("⚠️ Incremental training failed, falling back to batch")
+                    # Fall through to batch training
+            
+            # BATCH TRAINING (original implementation)
+            logger.info("📊 Using batch learning approach")
             
             # Split data (time-aware split)
             split_idx = int(len(X) * 0.8)
@@ -437,18 +484,20 @@ class EnhancedMLTrainer:
                 'train_accuracy': train_score,
                 'test_accuracy': test_score,
                 'features_used': selector.get_support().sum(),
-                'training_samples': len(X_train)
+                'training_samples': len(X_train),
+                'training_mode': 'batch'
             }
             
-            logger.info(f"✅ Trend model trained - Test accuracy: {test_score:.3f}")
+            logger.info(f"✅ Trend model trained (batch) - Test accuracy: {test_score:.3f}")
             return result
             
         except Exception as e:
             logger.error(f"Error training trend model: {e}")
             return {'success': False, 'error': str(e)}
     
-    def train_signal_success_model(self, df: pd.DataFrame) -> Dict:
-        """Train signal success prediction model"""
+    def train_signal_success_model(self, df: pd.DataFrame, 
+                                   force_batch: bool = False) -> Dict:
+        """Train signal success prediction model with incremental learning support"""
         logger.info("🎯 Training signal success model...")
         
         try:
@@ -479,6 +528,30 @@ class EnhancedMLTrainer:
             # Validate and clean features if data cleaner is available
             if self.data_cleaner:
                 X, y = self.data_cleaner.validate_features(X, y)
+            
+            # Use incremental learning if enabled and appropriate
+            if self.use_incremental and not force_batch:
+                logger.info("📈 Using incremental learning approach")
+                
+                # Prepare data for incremental training
+                train_df = pd.concat([X, y.rename('target')], axis=1)
+                
+                result = self.hybrid_manager.train_smart(
+                    train_df, 'signal',
+                    feature_cols=list(X.columns),
+                    target_col='target',
+                    force_batch=force_batch
+                )
+                
+                if result['success']:
+                    logger.info(f"✅ Incremental signal model trained - Samples: {result['total_samples_seen']:,}")
+                    return result
+                else:
+                    logger.warning("⚠️ Incremental training failed, falling back to batch")
+                    # Fall through to batch training
+            
+            # BATCH TRAINING (original implementation)
+            logger.info("📊 Using batch learning approach")
             
             # Split data
             split_idx = int(len(X) * 0.8)
@@ -531,18 +604,20 @@ class EnhancedMLTrainer:
                 'auc_score': auc_score,
                 'features_used': selector.get_support().sum(),
                 'training_samples': len(X_train),
-                'positive_rate': y_train.mean()
+                'positive_rate': y_train.mean(),
+                'training_mode': 'batch'
             }
             
-            logger.info(f"✅ Signal model trained - Test AUC: {auc_score:.3f}")
+            logger.info(f"✅ Signal model trained (batch) - Test AUC: {auc_score:.3f}")
             return result
             
         except Exception as e:
             logger.error(f"Error training signal model: {e}")
             return {'success': False, 'error': str(e)}
     
-    def train_market_regime_model(self, df: pd.DataFrame) -> Dict:
-        """Train market regime classification model"""
+    def train_market_regime_model(self, df: pd.DataFrame,
+                                  force_batch: bool = False) -> Dict:
+        """Train market regime classification model with incremental learning support"""
         logger.info("🎯 Training market regime model...")
         
         try:
@@ -586,6 +661,32 @@ class EnhancedMLTrainer:
             if self.data_cleaner:
                 X, y_encoded = self.data_cleaner.validate_features(X, pd.Series(y_encoded))
                 y_encoded = y_encoded.values  # Convert back to array
+            
+            # Use incremental learning if enabled and appropriate
+            if self.use_incremental and not force_batch:
+                logger.info("📈 Using incremental learning approach")
+                
+                # Prepare data for incremental training
+                train_df = pd.concat([X, pd.Series(y_encoded, name='target', index=X.index)], axis=1)
+                
+                result = self.hybrid_manager.train_smart(
+                    train_df, 'regime',
+                    feature_cols=list(X.columns),
+                    target_col='target',
+                    force_batch=force_batch
+                )
+                
+                if result['success']:
+                    logger.info(f"✅ Incremental regime model trained - Samples: {result['total_samples_seen']:,}")
+                    # Save label encoder
+                    joblib.dump(label_encoder, self.model_paths['regime_label_encoder'])
+                    return result
+                else:
+                    logger.warning("⚠️ Incremental training failed, falling back to batch")
+                    # Fall through to batch training
+            
+            # BATCH TRAINING (original implementation)
+            logger.info("📊 Using batch learning approach")
             
             # Split data
             split_idx = int(len(X) * 0.8)
@@ -634,10 +735,11 @@ class EnhancedMLTrainer:
                 'test_accuracy': test_score,
                 'features_used': selector.get_support().sum(),
                 'training_samples': len(X_train),
-                'regime_classes': list(label_encoder.classes_)
+                'regime_classes': list(label_encoder.classes_),
+                'training_mode': 'batch'
             }
             
-            logger.info(f"✅ Regime model trained - Test accuracy: {test_score:.3f}")
+            logger.info(f"✅ Regime model trained (batch) - Test accuracy: {test_score:.3f}")
             return result
             
         except Exception as e:
@@ -645,14 +747,15 @@ class EnhancedMLTrainer:
             return {'success': False, 'error': str(e)}
     
     def train_all_models(self, days_back: int = 90, force_refresh: bool = False, 
-                        incremental: bool = True) -> Dict:
+                        incremental: bool = True, force_batch: bool = False) -> Dict:
         """
-        Train all ML models with smart incremental data loading
+        Train all ML models with smart incremental data loading and learning
         
         Args:
             days_back: Days of historical data to use (reduced default)
             force_refresh: Force fresh data download
             incremental: Use incremental loading for efficiency
+            force_batch: Force batch training even if incremental is available
             
         Returns:
             Training results summary
@@ -661,6 +764,20 @@ class EnhancedMLTrainer:
         
         if not SKLEARN_AVAILABLE:
             return {'success': False, 'error': 'Scikit-learn not available'}
+        
+        # Show incremental learning status
+        if self.use_incremental and not force_batch:
+            logger.info("📈 Incremental/Cumulative Learning: ENABLED")
+            logger.info("🔄 Models will build upon previous training sessions")
+            
+            # Show current cumulative stats
+            for model_name in ['trend', 'signal', 'regime']:
+                stats = self.incremental_trainer.get_cumulative_stats(model_name)
+                if stats.get('training_sessions', 0) > 0:
+                    logger.info(f"  {model_name}: {stats['total_samples_seen']:,} samples, "
+                              f"{stats['training_sessions']} sessions")
+        else:
+            logger.info("📊 Batch Learning: Models will be retrained from scratch")
         
         # Fetch training data with incremental loading
         df = self.fetch_fresh_training_data(days_back, force_refresh, incremental)
@@ -681,19 +798,35 @@ class EnhancedMLTrainer:
         
         for model_name, train_func in models_to_train:
             logger.info(f"\n🔄 Training {model_name} model...")
-            result = train_func(df)
+            result = train_func(df, force_batch=force_batch)
             results[model_name] = result
             
             if result['success']:
-                logger.info(f"✅ {model_name} model training completed successfully")
+                mode = result.get('training_mode', 
+                                result.get('is_incremental', False) and 'incremental' or 'batch')
+                logger.info(f"✅ {model_name} model training completed ({mode})")
             else:
                 logger.error(f"❌ {model_name} model training failed: {result.get('error', 'Unknown error')}")
+        
+        # Generate training report if using incremental learning
+        if self.use_incremental:
+            training_report = self.hybrid_manager.get_training_report()
+            logger.info("\n📊 Cumulative Learning Report:")
+            for model_name, model_stats in training_report['models'].items():
+                logger.info(f"\n{model_name.upper()}:")
+                logger.info(f"  Total samples accumulated: {model_stats['total_samples']:,}")
+                logger.info(f"  Training sessions: {model_stats['training_sessions']}")
+                logger.info(f"  Current accuracy: {model_stats.get('current_accuracy', 'N/A')}")
+                if model_stats.get('improvement') is not None:
+                    logger.info(f"  Improvement: {model_stats['improvement']:+.3f}")
+                logger.info(f"  Model versions: {model_stats['versions']}")
         
         # Save training history (with JSON serialization fix)
         training_record = {
             'timestamp': datetime.now().isoformat(),
             'data_samples': int(len(df)),
             'data_period': f"{df['timestamp'].min()} to {df['timestamp'].max()}",
+            'training_mode': 'incremental' if (self.use_incremental and not force_batch) else 'batch',
             'results': {k: {kk: float(vv) if isinstance(vv, (np.integer, np.floating)) else vv 
                            for kk, vv in v.items()} for k, v in results.items()},
             'models_trained': [k for k, v in results.items() if v['success']],
@@ -725,26 +858,97 @@ class EnhancedMLTrainer:
             'models_trained': successful_models,
             'total_models': len(models_to_train),
             'training_data_size': len(df),
+            'training_mode': training_record['training_mode'],
             'results': results
         }
         
         logger.info(f"\n🎉 Training completed! {len(successful_models)}/{len(models_to_train)} models trained successfully")
+        logger.info(f"📈 Training mode: {training_record['training_mode'].upper()}")
         
         return summary
 
 def main():
     """Main training execution"""
     logger.info("🤖 CRYPTIX Enhanced ML Training System")
+    logger.info("=" * 60)
     
-    trainer = EnhancedMLTrainer()
+    # Check if incremental learning is available
+    if INCREMENTAL_AVAILABLE:
+        logger.info("📈 Incremental/Cumulative Learning: AVAILABLE")
+        logger.info("💡 Models will accumulate knowledge over training sessions")
+    else:
+        logger.info("📊 Batch Learning Only: AVAILABLE")
+        logger.info("⚠️ Models will be retrained from scratch each time")
+    
+    logger.info("=" * 60)
+    
+    # Initialize trainer with incremental learning enabled by default
+    trainer = EnhancedMLTrainer(use_incremental=True)
+    
+    # Show current cumulative stats if using incremental
+    if trainer.use_incremental:
+        logger.info("\n📊 Current Cumulative Learning Status:")
+        for model_name in ['trend', 'signal', 'regime']:
+            stats = trainer.incremental_trainer.get_cumulative_stats(model_name)
+            sessions = stats.get('training_sessions', 0)
+            samples = stats.get('total_samples_seen', 0)
+            last_trained = stats.get('last_trained', 'Never')
+            
+            if sessions > 0:
+                logger.info(f"\n{model_name.upper()} Model:")
+                logger.info(f"  • Total samples accumulated: {samples:,}")
+                logger.info(f"  • Training sessions: {sessions}")
+                logger.info(f"  • Last trained: {last_trained[:10] if last_trained != 'Never' else 'Never'}")
+                
+                # Show learning curve
+                curve = trainer.incremental_trainer.get_learning_curve(model_name)
+                if len(curve) >= 2:
+                    first_acc = curve[0].get('accuracy')
+                    last_acc = curve[-1].get('accuracy')
+                    # Only show improvement if both accuracies are available
+                    if first_acc is not None and last_acc is not None:
+                        improvement = last_acc - first_acc
+                        logger.info(f"  • Improvement: {improvement:+.3f} (from {first_acc:.3f} to {last_acc:.3f})")
+            else:
+                logger.info(f"\n{model_name.upper()} Model: Not yet trained")
+        
+        logger.info("\n" + "=" * 60)
     
     # Train all models with incremental approach
-    results = trainer.train_all_models(days_back=90, force_refresh=False, incremental=True)
+    # Set force_batch=True to disable incremental learning for this session
+    results = trainer.train_all_models(
+        days_back=90, 
+        force_refresh=False, 
+        incremental=True,
+        force_batch=False  # Set to True to force batch retraining
+    )
     
     if results['success']:
         logger.info(f"\n✅ Training completed successfully!")
         logger.info(f"🎯 Models trained: {', '.join(results['models_trained'])}")
         logger.info(f"📊 Training data: {results['training_data_size']:,} samples")
+        logger.info(f"📈 Training mode: {results['training_mode'].upper()}")
+        
+        # Show model performance
+        logger.info("\n📈 Model Performance:")
+        for model_name in results['models_trained']:
+            model_result = results['results'][model_name]
+            if 'test_accuracy' in model_result:
+                logger.info(f"  {model_name}: {model_result['test_accuracy']:.3f} accuracy")
+            elif 'accuracy' in model_result:
+                logger.info(f"  {model_name}: {model_result['accuracy']:.3f} accuracy")
+        
+        # If incremental, show cumulative report
+        if trainer.use_incremental and results['training_mode'] == 'incremental':
+            logger.info("\n📊 Cumulative Learning Report:")
+            report = trainer.hybrid_manager.get_training_report()
+            for model_name, model_info in report['models'].items():
+                logger.info(f"\n{model_name.upper()}:")
+                logger.info(f"  • Total accumulated samples: {model_info['total_samples']:,}")
+                logger.info(f"  • Total training sessions: {model_info['training_sessions']}")
+                if model_info.get('improvement') is not None:
+                    logger.info(f"  • Overall improvement: {model_info['improvement']:+.3f}")
+                logger.info(f"  • Model versions saved: {model_info['versions']}")
     else:
         logger.error("❌ Training failed!")
         

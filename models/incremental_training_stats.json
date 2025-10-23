@@ -1,0 +1,101 @@
+{
+  "trend": {
+    "total_samples_seen": 113316,
+    "training_sessions": 3,
+    "last_trained": "2025-10-23T14:54:59.986036",
+    "performance_history": [
+      {
+        "timestamp": "2025-10-23T14:38:47.644711",
+        "samples_added": 37772,
+        "total_samples": 37772,
+        "accuracy": null,
+        "auc_score": null,
+        "training_session": 1,
+        "note": "Migrated from batch model (estimated)"
+      },
+      {
+        "timestamp": "2025-10-23T14:48:46.702470",
+        "samples_added": 37772,
+        "total_samples": 75544,
+        "accuracy": 0.49867626813512655,
+        "auc_score": 0.5001504884990501,
+        "training_session": 2
+      },
+      {
+        "timestamp": "2025-10-23T14:54:59.986045",
+        "samples_added": 37772,
+        "total_samples": 113316,
+        "accuracy": 0.5027004130043419,
+        "auc_score": 0.49760525778153203,
+        "training_session": 3
+      }
+    ],
+    "feature_importance_history": []
+  },
+  "signal": {
+    "total_samples_seen": 113316,
+    "training_sessions": 3,
+    "last_trained": "2025-10-23T14:55:02.409271",
+    "performance_history": [
+      {
+        "timestamp": "2025-10-23T14:38:47.648142",
+        "samples_added": 37772,
+        "total_samples": 37772,
+        "accuracy": null,
+        "auc_score": null,
+        "training_session": 1,
+        "note": "Migrated from batch model (estimated)"
+      },
+      {
+        "timestamp": "2025-10-23T14:48:48.552344",
+        "samples_added": 37772,
+        "total_samples": 75544,
+        "accuracy": 0.6388065233506302,
+        "auc_score": null,
+        "training_session": 2
+      },
+      {
+        "timestamp": "2025-10-23T14:55:02.409283",
+        "samples_added": 37772,
+        "total_samples": 113316,
+        "accuracy": 0.6207508207137562,
+        "auc_score": null,
+        "training_session": 3
+      }
+    ],
+    "feature_importance_history": []
+  },
+  "regime": {
+    "total_samples_seen": 113316,
+    "training_sessions": 3,
+    "last_trained": "2025-10-23T14:55:04.289254",
+    "performance_history": [
+      {
+        "timestamp": "2025-10-23T14:38:47.651659",
+        "samples_added": 37772,
+        "total_samples": 37772,
+        "accuracy": null,
+        "auc_score": null,
+        "training_session": 1,
+        "note": "Migrated from batch model (estimated)"
+      },
+      {
+        "timestamp": "2025-10-23T14:48:55.198345",
+        "samples_added": 37772,
+        "total_samples": 75544,
+        "accuracy": 0.6125436831515408,
+        "auc_score": null,
+        "training_session": 2
+      },
+      {
+        "timestamp": "2025-10-23T14:55:04.289262",
+        "samples_added": 37772,
+        "total_samples": 113316,
+        "accuracy": 0.6662871968654029,
+        "auc_score": null,
+        "training_session": 3
+      }
+    ],
+    "feature_importance_history": []
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "versions": [
+    {
+      "version": 1,
+      "timestamp": "2025-10-23T14:38:47.646025",
+      "samples_added": 37772,
+      "total_samples": 37772,
+      "metrics": {
+        "accuracy": null,
+        "note": "Baseline from batch model"
+      },
+      "model_path": "models/trend_v1.pkl"
+    },
+    {
+      "version": 2,
+      "timestamp": "2025-10-23T14:48:46.713784",
+      "samples_added": 37772,
+      "total_samples": 75544,
+      "metrics": {
+        "accuracy": 0.49867626813512655,
+        "auc_score": 0.5001504884990501
+      },
+      "model_path": "models/trend_v2.pkl"
+    },
+    {
+      "version": 3,
+      "timestamp": "2025-10-23T14:54:59.990368",
+      "samples_added": 37772,
+      "total_samples": 113316,
+      "metrics": {
+        "accuracy": 0.5027004130043419,
+        "auc_score": 0.49760525778153203
+      },
+      "model_path": "models/trend_v3.pkl"
+    }
+  ],
+  "current_version": 3
+}

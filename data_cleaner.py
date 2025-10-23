@@ -79,7 +79,7 @@ class DataCleaner:
                     cleaned_df[col] = cleaned_df[col].fillna(cleaned_df[col].median())
                 else:
                     # Use forward fill then backward fill, then median
-                    cleaned_df[col] = cleaned_df[col].fillna(method='ffill').fillna(method='bfill')
+                    cleaned_df[col] = cleaned_df[col].ffill().bfill()
                     cleaned_df[col] = cleaned_df[col].fillna(cleaned_df[col].median())
         
         # 4. Validate data ranges
