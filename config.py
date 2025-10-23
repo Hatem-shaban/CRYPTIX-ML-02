@@ -375,4 +375,4 @@ ML_STRATEGY = {
 }
 
 # Trading Strategy Selection
-DEFAULT_STRATEGY = os.getenv('DEFAULT_STRATEGY', 'ADAPTIVE')  # Can be ADAPTIVE or ML_PURE
+DEFAULT_STRATEGY = os.getenv('DEFAULT_STRATEGY', 'ML_PURE')  # Can be ADAPTIVE or ML_PURE
