@@ -3781,6 +3781,62 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
             # Extract base asset from symbol (e.g., "BTC" from "BTCUSDT")
             base_asset = symbol[:-4] if symbol.endswith('USDT') else symbol.split(symbol_info['quoteAsset'])[0]
 
+            # ===== CRITICAL: Check if sell would result in loss using Smart Position Tracker =====
+            print("\n=== Profit Validation Check ===")
+            try:
+                # Use the same position tracker already imported at module level
+                position_tracker = get_position_tracker()
+                
+                # Get current market price for profit calculation
+                ticker = client.get_ticker(symbol=symbol)
+                current_price = float(ticker['lastPrice'])
+                
+                # Check if we should allow this partial sell based on profitability
+                minimum_profit_pct = config.REBALANCING.get('minimum_profit_pct', 2.0)
+                should_sell, reason = position_tracker.should_allow_partial_sell(
+                    symbol=symbol,
+                    current_price=current_price,
+                    minimum_profit_pct=minimum_profit_pct
+                )
+                
+                if not should_sell:
+                    print(f"🚫 SELL ORDER BLOCKED: {reason}")
+                    trade_info['status'] = 'blocked_unprofitable'
+                    trade_info['error'] = reason
+                    bot_status['trading_summary']['failed_trades'] += 1
+                    
+                    # Log the blocked trade for analysis
+                    log_error_to_csv(
+                        f"Sell blocked for {symbol}: {reason}",
+                        "UNPROFITABLE_SELL_BLOCKED",
+                        "execute_trade",
+                        "INFO"
+                    )
+                    
+                    return f"❌ Sell order blocked: {reason}"
+                
+                # If we reach here, the sell is profitable
+                print(f"✅ Profit check passed: {reason}")
+                
+            except Exception as profit_check_error:
+                print(f"🚫 CRITICAL: Profit validation error - blocking sell for safety")
+                print(f"   Error: {profit_check_error}")
+                
+                # SAFETY-FIRST: Block the sell on ANY error to prevent potential losses
+                trade_info['status'] = 'profit_validation_error'
+                trade_info['error'] = str(profit_check_error)
+                bot_status['trading_summary']['failed_trades'] += 1
+                
+                log_error_to_csv(
+                    f"Profit validation error for {symbol}: {profit_check_error}",
+                    "PROFIT_VALIDATION_ERROR",
+                    "execute_trade",
+                    "ERROR"
+                )
+                
+                return f"❌ Sell blocked - validation error: {profit_check_error}"
+            # ===== END PROFIT VALIDATION CHECK =====
+
             print(f"✅ Proceeding with validated SELL order...")
             print(f"Validated quantity: {qty} {base_asset}")
 
@@ -6597,6 +6653,60 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
                 
         if current_balance <= 0:
             return {"success": False, "error": f"No {base_asset} balance to sell"}
+            
+        # ===== CRITICAL: Profit Validation Check - Prevent Selling at Loss =====
+        print("\n=== Profit Validation Check (Partial Sell) ===")
+        try:
+            # Use position tracker to check profitability
+            position_tracker = get_position_tracker()
+            
+            # Get current market price for profit calculation
+            ticker = client.get_ticker(symbol=symbol)
+            current_price = float(ticker['lastPrice'])
+            
+            # Check if we should allow this partial sell based on profitability
+            minimum_profit_pct = config.REBALANCING.get('minimum_profit_pct', 2.0)
+            should_sell, profit_reason = position_tracker.should_allow_partial_sell(
+                symbol=symbol,
+                current_price=current_price,
+                minimum_profit_pct=minimum_profit_pct
+            )
+            
+            if not should_sell:
+                print(f"🚫 PARTIAL SELL BLOCKED: {profit_reason}")
+                
+                # Log the blocked trade for analysis
+                log_error_to_csv(
+                    f"Partial sell blocked for {symbol}: {profit_reason}",
+                    "UNPROFITABLE_PARTIAL_SELL_BLOCKED",
+                    "sell_partial_position",
+                    "INFO"
+                )
+                
+                return {
+                    "success": False,
+                    "error": f"Sell blocked - unprofitable: {profit_reason}",
+                    "blocked_reason": profit_reason
+                }
+            
+            # If we reach here, the sell is profitable
+            print(f"✅ Profit check passed: {profit_reason}")
+            
+        except Exception as profit_check_error:
+            print(f"⚠️ Warning: Could not perform profit validation: {profit_check_error}")
+            # SAFETY-FIRST: Block the sell on ANY error
+            log_error_to_csv(
+                f"Profit validation error for {symbol}: {profit_check_error}",
+                "PROFIT_VALIDATION_ERROR",
+                "sell_partial_position",
+                "WARNING"
+            )
+            return {
+                "success": False,
+                "error": f"Sell blocked - validation error: {profit_check_error}",
+                "validation_error": str(profit_check_error)
+            }
+        # ===== END PROFIT VALIDATION CHECK =====
             
         # Calculate sell quantity
         sell_quantity = current_balance * (percentage / 100.0)
