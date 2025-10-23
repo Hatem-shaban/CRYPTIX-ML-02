@@ -8,9 +8,24 @@ import os
 from datetime import datetime
 
 class PortfolioTracker:
+    """Portfolio tracking with Singleton pattern to ensure consistent state"""
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, data_file='portfolio_tracking.json'):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self, data_file='portfolio_tracking.json'):
+        # Only initialize once
+        if self._initialized:
+            return
+        
         self.data_file = data_file
         self.data = self._load_data()
+        
+        PortfolioTracker._initialized = True
     
     def _load_data(self):
         """Load portfolio tracking data"""

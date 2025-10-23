@@ -17,8 +17,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class TelegramNotifier:
+    """Telegram notification manager with Singleton pattern to ensure single API client"""
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
         """Initialize Telegram notifier with configuration"""
+        # Only initialize once
+        if self._initialized:
+            return
+        
         # Verbosity helper (respects VERBOSE_LOGS env var)
         def _verbose():
             try:
@@ -59,6 +72,8 @@ class TelegramNotifier:
         if self._verbose():
             print(f"🤖 Telegram Notifier initialized - Enabled: {self.enabled}")
         # Connection test will be performed only once globally to avoid spam
+        
+        TelegramNotifier._initialized = True
 
     def _test_connection_silent(self) -> bool:
         """Test Telegram bot connection without sending test messages"""

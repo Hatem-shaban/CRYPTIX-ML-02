@@ -18,9 +18,21 @@ class SupabasePositionTracker:
     """
     Cloud-based position tracker using Supabase
     Replaces SmartPositionTracker with persistent database storage
+    Implements Singleton pattern to ensure single database connection
     """
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self):
+        # Only initialize once
+        if self._initialized:
+            return
+        
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_SERVICE_KEY")  # Use service key for full access
         
@@ -38,6 +50,8 @@ class SupabasePositionTracker:
         self._positions_cache = {}
         self._cache_last_updated = None
         self.load_positions()
+        
+        SupabasePositionTracker._initialized = True
     
     def load_positions(self) -> Dict:
         """Load current positions from Supabase"""

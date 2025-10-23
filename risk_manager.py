@@ -14,9 +14,21 @@ import config
 class EnhancedRiskManager:
     """
     Advanced risk management system with multiple layers of protection
+    Implements Singleton pattern to maintain consistent risk state across the application
     """
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self):
+        # Only initialize once
+        if self._initialized:
+            return
+        
         self.risk_metrics = {}
         self.drawdown_tracker = {}
         self.exposure_tracker = {}
@@ -29,6 +41,8 @@ class EnhancedRiskManager:
         self.max_drawdown = getattr(config, 'MAX_DRAWDOWN', 15.0)
         self.max_portfolio_exposure = getattr(config, 'MAX_PORTFOLIO_EXPOSURE', 80.0)
         self.max_consecutive_losses = getattr(config, 'MAX_CONSECUTIVE_LOSSES', 5)
+        
+        EnhancedRiskManager._initialized = True
         
     def comprehensive_risk_check(self, 
                                 account_balance: float,

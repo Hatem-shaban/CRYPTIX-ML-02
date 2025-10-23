@@ -21,7 +21,14 @@ pd.options.mode.chained_assignment = None
 logger = logging.getLogger(__name__)
 
 class MemoryOptimizer:
-    """Memory optimization utilities for constrained environments"""
+    """Memory optimization utilities for constrained environments with Singleton pattern"""
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, max_memory_mb: int = 450):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self, max_memory_mb: int = 450):
         """
@@ -30,6 +37,10 @@ class MemoryOptimizer:
         Args:
             max_memory_mb: Maximum memory usage in MB (450MB for 512MB limit with buffer)
         """
+        # Only initialize once
+        if self._initialized:
+            return
+        
         self.max_memory_mb = max_memory_mb
         self.max_memory_bytes = max_memory_mb * 1024 * 1024
         self.process = psutil.Process()
@@ -41,6 +52,8 @@ class MemoryOptimizer:
         self._configure_numpy()
         
         logger.info(f"🧠 Memory Optimizer initialized - Max memory: {max_memory_mb}MB")
+        
+        MemoryOptimizer._initialized = True
     
     def _configure_pandas(self):
         """Configure pandas for memory efficiency"""
