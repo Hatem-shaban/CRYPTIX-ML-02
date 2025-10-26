@@ -3813,25 +3813,6 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                         "INFO"
                     )
                     
-                    # Log blocked sell as HOLD signal with UNPROFITABLE_SELL_BLOCKED reason
-                    try:
-                        # Get current indicators for signal logging
-                        blocked_indicators = {
-                            'symbol': symbol,
-                            'rsi': bot_status.get('rsi', 0),
-                            'macd': bot_status.get('macd', {}).get('macd', 0),
-                            'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                            'sentiment': bot_status.get('sentiment', 'neutral')
-                        }
-                        log_signal_to_csv(
-                            "HOLD", 
-                            current_price, 
-                            blocked_indicators, 
-                            f"UNPROFITABLE_SELL_BLOCKED - {reason}"
-                        )
-                    except Exception as log_error:
-                        print(f"⚠️ Failed to log blocked sell signal: {log_error}")
-                    
                     return f"❌ Sell order blocked: {reason}"
                 
                 # If we reach here, the sell is profitable
@@ -3852,24 +3833,6 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     "execute_trade",
                     "ERROR"
                 )
-                
-                # Log validation error as HOLD signal with proper reason
-                try:
-                    error_indicators = {
-                        'symbol': symbol,
-                        'rsi': bot_status.get('rsi', 0),
-                        'macd': bot_status.get('macd', {}).get('macd', 0),
-                        'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                        'sentiment': bot_status.get('sentiment', 'neutral')
-                    }
-                    log_signal_to_csv(
-                        "HOLD", 
-                        0, 
-                        error_indicators, 
-                        f"PROFIT_VALIDATION_ERROR - Sell blocked for safety: {profit_check_error}"
-                    )
-                except Exception as log_error:
-                    print(f"⚠️ Failed to log validation error signal: {log_error}")
                 
                 return f"❌ Sell blocked - validation error: {profit_check_error}"
             # ===== END PROFIT VALIDATION CHECK =====
@@ -6766,24 +6729,6 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
                     "INFO"
                 )
                 
-                # Log blocked partial sell as HOLD signal with reason
-                try:
-                    blocked_indicators = {
-                        'symbol': symbol,
-                        'rsi': bot_status.get('rsi', 0),
-                        'macd': bot_status.get('macd', {}).get('macd', 0),
-                        'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                        'sentiment': bot_status.get('sentiment', 'neutral')
-                    }
-                    log_signal_to_csv(
-                        "HOLD", 
-                        current_price, 
-                        blocked_indicators, 
-                        f"UNPROFITABLE_PARTIAL_SELL_BLOCKED - {profit_reason}"
-                    )
-                except Exception as log_error:
-                    print(f"⚠️ Failed to log blocked partial sell signal: {log_error}")
-                
                 return {
                     "success": False,
                     "error": f"Sell blocked - unprofitable: {profit_reason}",
@@ -6802,25 +6747,6 @@ def sell_partial_position(symbol, percentage=50.0, reason="Partial profit taking
                 "sell_partial_position",
                 "WARNING"
             )
-            
-            # Log validation error as HOLD signal
-            try:
-                error_indicators = {
-                    'symbol': symbol,
-                    'rsi': bot_status.get('rsi', 0),
-                    'macd': bot_status.get('macd', {}).get('macd', 0),
-                    'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                    'sentiment': bot_status.get('sentiment', 'neutral')
-                }
-                log_signal_to_csv(
-                    "HOLD", 
-                    0, 
-                    error_indicators, 
-                    f"PROFIT_VALIDATION_ERROR - Partial sell blocked: {profit_check_error}"
-                )
-            except Exception as log_error:
-                print(f"⚠️ Failed to log validation error signal: {log_error}")
-            
             return {
                 "success": False,
                 "error": f"Sell blocked - validation error: {profit_check_error}",
