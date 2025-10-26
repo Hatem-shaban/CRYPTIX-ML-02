@@ -688,7 +688,7 @@ bot_status = {
     'next_signal_time': None,  # Track when next signal will be generated
     'signal_interval': 300,  # Base signal generation interval in seconds (5 minutes - adaptive)
     'market_regime': 'NORMAL',  # Current market regime (QUIET, NORMAL, VOLATILE, EXTREME)
-    'hunting_mode': False,  # Aggressive opportunity hunting mode
+    'hunting_mode': True,  # Aggressive opportunity hunting mode
     'last_volatility_check': None,  # Track when we last checked volatility
     'adaptive_intervals': {
         'QUIET': 3600,       # 60 minutes during quiet markets (increased from 30min)

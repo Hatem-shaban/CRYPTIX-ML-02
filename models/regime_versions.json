@@ -32,7 +32,18 @@
         "auc_score": null
       },
       "model_path": "models/regime_v3.pkl"
+    },
+    {
+      "version": 4,
+      "timestamp": "2025-10-26T12:25:03.770615",
+      "samples_added": 37772,
+      "total_samples": 151088,
+      "metrics": {
+        "accuracy": 0.6453722334004024,
+        "auc_score": null
+      },
+      "model_path": "models/regime_v4.pkl"
     }
   ],
-  "current_version": 3
+  "current_version": 4
 }

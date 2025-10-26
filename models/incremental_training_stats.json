@@ -1,8 +1,8 @@
 {
   "trend": {
-    "total_samples_seen": 113316,
-    "training_sessions": 3,
-    "last_trained": "2025-10-23T14:54:59.986036",
+    "total_samples_seen": 151088,
+    "training_sessions": 4,
+    "last_trained": "2025-10-26T12:24:55.520616",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.644711",
@@ -28,14 +28,22 @@
         "accuracy": 0.5027004130043419,
         "auc_score": 0.49760525778153203,
         "training_session": 3
+      },
+      {
+        "timestamp": "2025-10-26T12:24:55.520649",
+        "samples_added": 37772,
+        "total_samples": 151088,
+        "accuracy": 0.503441702848671,
+        "auc_score": 0.5050894452351811,
+        "training_session": 4
       }
     ],
     "feature_importance_history": []
   },
   "signal": {
-    "total_samples_seen": 113316,
-    "training_sessions": 3,
-    "last_trained": "2025-10-23T14:55:02.409271",
+    "total_samples_seen": 151088,
+    "training_sessions": 4,
+    "last_trained": "2025-10-26T12:25:00.353736",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.648142",
@@ -61,14 +69,22 @@
         "accuracy": 0.6207508207137562,
         "auc_score": null,
         "training_session": 3
+      },
+      {
+        "timestamp": "2025-10-26T12:25:00.353752",
+        "samples_added": 37772,
+        "total_samples": 151088,
+        "accuracy": 0.6474637297469025,
+        "auc_score": null,
+        "training_session": 4
       }
     ],
     "feature_importance_history": []
   },
   "regime": {
-    "total_samples_seen": 113316,
-    "training_sessions": 3,
-    "last_trained": "2025-10-23T14:55:04.289254",
+    "total_samples_seen": 151088,
+    "training_sessions": 4,
+    "last_trained": "2025-10-26T12:25:03.758292",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.651659",
@@ -94,6 +110,14 @@
         "accuracy": 0.6662871968654029,
         "auc_score": null,
         "training_session": 3
+      },
+      {
+        "timestamp": "2025-10-26T12:25:03.758308",
+        "samples_added": 37772,
+        "total_samples": 151088,
+        "accuracy": 0.6453722334004024,
+        "auc_score": null,
+        "training_session": 4
       }
     ],
     "feature_importance_history": []

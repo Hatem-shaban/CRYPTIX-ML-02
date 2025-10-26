@@ -414,5 +414,52 @@
       "regime"
     ],
     "training_duration": "completed"
+  },
+  {
+    "timestamp": "2025-10-26T12:25:03.910227",
+    "data_samples": 37772,
+    "data_period": "2025-07-28 10:00:00 to 2025-10-26 08:00:00",
+    "training_mode": "incremental",
+    "results": {
+      "trend": {
+        "success": true,
+        "model_name": "trend",
+        "samples_added": 37772,
+        "total_samples_seen": 151088,
+        "training_sessions": 4,
+        "accuracy": 0.503441702848671,
+        "auc_score": 0.5050894452351811,
+        "version": 4,
+        "is_incremental": true
+      },
+      "signal": {
+        "success": true,
+        "model_name": "signal",
+        "samples_added": 37772,
+        "total_samples_seen": 151088,
+        "training_sessions": 4,
+        "accuracy": 0.6474637297469025,
+        "auc_score": null,
+        "version": 4,
+        "is_incremental": true
+      },
+      "regime": {
+        "success": true,
+        "model_name": "regime",
+        "samples_added": 37772,
+        "total_samples_seen": 151088,
+        "training_sessions": 4,
+        "accuracy": 0.6453722334004024,
+        "auc_score": null,
+        "version": 4,
+        "is_incremental": true
+      }
+    },
+    "models_trained": [
+      "trend",
+      "signal",
+      "regime"
+    ],
+    "training_duration": "completed"
   }
 ]
