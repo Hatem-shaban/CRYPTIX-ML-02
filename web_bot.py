@@ -3110,9 +3110,35 @@ def signal_generator(df, symbol="BTCUSDT"):
     
     except Exception as e:
         error_msg = f"Error in strategy execution: {str(e)}"
-        print(error_msg)  # Debug log
+        print(f"Error in strategy execution: {str(e)}")  # Debug log
         log_error_to_csv(error_msg, "STRATEGY_ERROR", "signal_generator", "ERROR")
         signal, reason = "HOLD", f"Strategy error: {str(e)}"
+    
+    # ===== PROFIT VALIDATION FOR SELL SIGNALS BEFORE LOGGING =====
+    # Validate SELL signals for profitability before logging them
+    if signal == "SELL":
+        try:
+            from smart_position_tracker import get_position_tracker
+            position_tracker = get_position_tracker()
+            
+            minimum_profit_pct = config.REBALANCING.get('minimum_profit_pct', 2.0)
+            should_sell, profit_reason = position_tracker.should_allow_partial_sell(
+                symbol=symbol,
+                current_price=current_price,
+                minimum_profit_pct=minimum_profit_pct
+            )
+            
+            if not should_sell:
+                # Convert unprofitable SELL to HOLD
+                print(f"🚫 SELL signal converted to HOLD: {profit_reason}")
+                signal = "HOLD"
+                reason = f"UNPROFITABLE_SELL_BLOCKED - {profit_reason}"
+        except Exception as validation_error:
+            # Safety-first: Convert to HOLD on validation error
+            print(f"⚠️ Sell validation error, converting to HOLD: {validation_error}")
+            signal = "HOLD"
+            reason = f"PROFIT_VALIDATION_ERROR - {validation_error}"
+    # ===== END PROFIT VALIDATION =====
     
     # Final signal logging and notifications
     log_signal_to_csv(signal, current_price, indicators, f"Strategy {strategy} - {reason}")
@@ -3805,24 +3831,7 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                     trade_info['error'] = reason
                     bot_status['trading_summary']['failed_trades'] += 1
                     
-                    # Log blocked sell as HOLD signal (not error) with reason
-                    try:
-                        blocked_indicators = {
-                            'symbol': symbol,
-                            'rsi': bot_status.get('rsi', 0),
-                            'macd': bot_status.get('macd', {}).get('macd', 0),
-                            'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                            'sentiment': bot_status.get('sentiment', 'neutral')
-                        }
-                        log_signal_to_csv(
-                            "HOLD", 
-                            current_price, 
-                            blocked_indicators, 
-                            f"UNPROFITABLE_SELL_BLOCKED - {reason}"
-                        )
-                    except Exception as log_error:
-                        print(f"⚠️ Failed to log blocked sell signal: {log_error}")
-                    
+                    # Signal already logged as HOLD in signal_generator
                     return f"❌ Sell order blocked: {reason}"
                 
                 # If we reach here, the sell is profitable
@@ -3837,24 +3846,7 @@ def execute_trade(signal, symbol="BTCUSDT", qty=None):
                 trade_info['error'] = str(profit_check_error)
                 bot_status['trading_summary']['failed_trades'] += 1
                 
-                # Log as HOLD signal with validation error reason
-                try:
-                    error_indicators = {
-                        'symbol': symbol,
-                        'rsi': bot_status.get('rsi', 0),
-                        'macd': bot_status.get('macd', {}).get('macd', 0),
-                        'macd_trend': bot_status.get('macd', {}).get('trend', 'NEUTRAL'),
-                        'sentiment': bot_status.get('sentiment', 'neutral')
-                    }
-                    log_signal_to_csv(
-                        "HOLD", 
-                        0, 
-                        error_indicators, 
-                        f"PROFIT_VALIDATION_ERROR - Sell blocked for safety: {profit_check_error}"
-                    )
-                except Exception as log_error:
-                    print(f"⚠️ Failed to log validation error signal: {log_error}")
-                
+                # Signal already logged as HOLD in signal_generator
                 return f"❌ Sell blocked - validation error: {profit_check_error}"
             # ===== END PROFIT VALIDATION CHECK =====
 
