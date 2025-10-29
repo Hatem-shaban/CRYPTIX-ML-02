@@ -2,7 +2,7 @@
   "trend": {
     "total_samples_seen": 3563734,
     "training_sessions": 74,
-    "last_trained": "2025-10-29T12:17:28.234017",
+    "last_trained": "2025-10-29T12:17:28.234027",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.644711",
@@ -603,7 +603,7 @@
   "signal": {
     "total_samples_seen": 3563734,
     "training_sessions": 74,
-    "last_trained": "2025-10-29T12:17:55.399417",
+    "last_trained": "2025-10-29T12:17:55.399429",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.648142",
@@ -1204,7 +1204,7 @@
   "regime": {
     "total_samples_seen": 3591094,
     "training_sessions": 74,
-    "last_trained": "2025-10-29T12:18:26.070204",
+    "last_trained": "2025-10-29T12:18:26.070213",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.651659",
