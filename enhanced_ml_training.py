@@ -396,12 +396,35 @@ class EnhancedMLTrainer:
             if features_df.empty:
                 return {'success': False, 'error': 'No features available'}
             
-            # Create trend target (future price direction)
-            if 'future_return_4h' in df.columns:
-                y = (df['future_return_4h'] > 0).astype(int)
+            # Create REAL trend target using ADX + directional movement
+            # Only label as trending when ADX > 25 (confirmed trend strength)
+            if 'adx' in df.columns and 'plus_di' in df.columns and 'minus_di' in df.columns:
+                y = np.where(
+                    (df['adx'] > 25) & (df['plus_di'] > df['minus_di']),
+                    1,  # Confirmed uptrend (ADX strong + bullish DI)
+                    np.where(
+                        (df['adx'] > 25) & (df['plus_di'] < df['minus_di']),
+                        0,  # Confirmed downtrend (ADX strong + bearish DI)
+                        0  # Default to 0 for no-trend (helps balance classes)
+                    )
+                )
+                
+                # Convert to pandas Series to maintain index alignment
+                y = pd.Series(y, index=df.index, dtype=int)
+                
+                logger.info(f"📊 Trend target distribution: "
+                            f"Uptrend={y.sum():,}, Downtrend/Neutral={(len(y) - y.sum()):,}, "
+                            f"Ratio={y.sum()/len(y):.1%}")
             else:
-                # Fallback: use next period return
-                y = (df['close'].shift(-1) / df['close'] > 1).astype(int)
+                # Fallback: use improved threshold-based approach (2% minimum meaningful move)
+                if 'future_return_4h' in df.columns:
+                    y = (df['future_return_4h'] > 0.02).astype(int)
+                    logger.warning("⚠️ Using fallback trend target with 2% threshold (ADX features not available)")
+                else:
+                    # Last resort: next period return with threshold
+                    future_return = df['close'].shift(-1) / df['close'] - 1
+                    y = (future_return > 0.02).astype(int)
+                    logger.warning("⚠️ Using basic fallback trend target")
             
             # Remove rows with NaN targets
             valid_mask = ~y.isna()
