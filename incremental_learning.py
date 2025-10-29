@@ -306,18 +306,19 @@ class IncrementalMLTrainer:
             # Scale features
             X_scaled = scaler.transform(X)
             
-            # Feature selection (only on first training or periodically)
-            if is_first_training or self.cumulative_stats[model_name]['training_sessions'] % 10 == 0:
-                n_features = min(50, len(feature_cols))
-                selector = SelectKBest(score_func=f_classif, k=n_features)
-                X_selected = selector.fit_transform(X_scaled, y)
-                self.feature_selectors[model_name] = selector
+            # Feature selection - DISABLED for incremental models
+            # The existing incremental models were trained WITHOUT feature selection
+            # They expect all 73 features, not a reduced set
+            # Using feature selection now would break compatibility
+            selector = self.feature_selectors.get(model_name)
+            
+            if selector is not None:
+                # If a selector exists from previous training, use it
+                X_selected = selector.transform(X_scaled)
+                logger.info(f"Using existing feature selector: {X_scaled.shape[1]} → {X_selected.shape[1]} features")
             else:
-                selector = self.feature_selectors.get(model_name)
-                if selector:
-                    X_selected = selector.transform(X_scaled)
-                else:
-                    X_selected = X_scaled
+                # No selector - use all features (this is the normal case for incremental models)
+                X_selected = X_scaled
             
             # Get or create model
             model = self._create_or_get_model(model_name, len(np.unique(y)))

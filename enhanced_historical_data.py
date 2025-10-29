@@ -323,7 +323,9 @@ class EnhancedHistoricalDataFetcher:
             final_df = pd.concat(combined_data, ignore_index=True)
             
             # Remove rows with target NaN (last few rows of each dataset)
-            final_df = final_df.dropna(subset=['future_return_1h', 'signal_success'])
+            # Only drop if these columns exist (they won't exist for small datasets < 200 rows)
+            if 'future_return_1h' in final_df.columns and 'signal_success' in final_df.columns:
+                final_df = final_df.dropna(subset=['future_return_1h', 'signal_success'])
             
             logger.info(f"🎯 Combined dataset ready: {len(final_df)} total records")
             logger.info(f"📊 Features: {len(final_df.columns)} columns")
