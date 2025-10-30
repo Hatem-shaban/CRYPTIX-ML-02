@@ -813,7 +813,18 @@
         "auc_score": 0.5063909690942761
       },
       "model_path": "models/trend_v74.pkl"
+    },
+    {
+      "version": 75,
+      "timestamp": "2025-10-30T10:11:23.944942",
+      "samples_added": 1129179,
+      "total_samples": 4692913,
+      "metrics": {
+        "accuracy": 0.9160505110350087,
+        "auc_score": 0.9452797795438371
+      },
+      "model_path": "models/trend_v75.pkl"
     }
   ],
-  "current_version": 74
+  "current_version": 75
 }

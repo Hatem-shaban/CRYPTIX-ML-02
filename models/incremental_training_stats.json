@@ -1,8 +1,8 @@
 {
   "trend": {
-    "total_samples_seen": 3563734,
-    "training_sessions": 74,
-    "last_trained": "2025-10-29T12:17:28.234027",
+    "total_samples_seen": 4692913,
+    "training_sessions": 75,
+    "last_trained": "2025-10-30T10:11:23.926740",
     "performance_history": [
       {
         "timestamp": "2025-10-23T14:38:47.644711",
@@ -596,6 +596,14 @@
         "accuracy": 0.5023007273267033,
         "auc_score": 0.5063909690942761,
         "training_session": 74
+      },
+      {
+        "timestamp": "2025-10-30T10:11:23.926757",
+        "samples_added": 1129179,
+        "total_samples": 4692913,
+        "accuracy": 0.9160505110350087,
+        "auc_score": 0.9452797795438371,
+        "training_session": 75
       }
     ],
     "feature_importance_history": []
