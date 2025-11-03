@@ -7678,11 +7678,32 @@ def api_rebalance():
 # ML Training Scheduler API Routes
 @app.route('/api/ml-training/status', methods=['GET'])
 def api_ml_training_status():
-    """Get ML training scheduler status"""
+    """Get ML training status from incremental learning system"""
     try:
-        from simple_ml_scheduler import get_training_status
+        from incremental_learning import IncrementalMLTrainer
+        trainer = IncrementalMLTrainer()
         
-        status = get_training_status()
+        # Get training report for all models
+        status = {
+            'scheduler_running': True,  # Always running with incremental
+            'training_enabled': True,   # Always enabled with incremental
+            'training_in_progress': False
+        }
+        
+        # Add model-specific stats
+        stats = trainer.get_cumulative_stats()
+        for model_name in ['trend', 'signal', 'regime']:
+            model_stats = stats.get(model_name, {})
+            status[f'{model_name}_model'] = {
+                'samples_trained': model_stats.get('total_samples_seen', 0),
+                'training_sessions': model_stats.get('training_sessions', 0),
+                'last_trained': model_stats.get('last_trained'),
+            }
+            
+            # Add accuracy from latest training if available
+            curve = trainer.get_learning_curve(model_name)
+            if curve:
+                status[f'{model_name}_model']['current_accuracy'] = curve[-1].get('accuracy')
         
         return jsonify({
             "success": True,
@@ -7699,15 +7720,18 @@ def api_ml_training_status():
 
 @app.route('/api/ml-training/force', methods=['POST'])
 def api_force_ml_training():
-    """Force immediate ML training execution"""
+    """Force immediate incremental ML training execution"""
     try:
-        from simple_ml_scheduler import force_training_execution
+        # Import and run enhanced ML training
+        from enhanced_ml_training import EnhancedMLTrainer
+        trainer = EnhancedMLTrainer(use_incremental=True)
         
-        results = force_training_execution()
+        # Execute training in incremental mode 
+        results = trainer.train_all_models(incremental=True)
         
         return jsonify({
             "success": True,
-            "message": "ML training executed",
+            "message": "Incremental ML training executed",
             "results": results,
             "timestamp": format_cairo_time()
         })
@@ -7782,15 +7806,20 @@ if __name__ == '__main__':
                     print("❌ Failed to initialize API client at startup")
                     raise RuntimeError("API client init failed")
 
-        # Initialize automated ML training scheduler
+        # Verify incremental ML system is available
         try:
-            from simple_ml_scheduler import start_automated_ml_training
-            print("🤖 Starting automated ML training scheduler...")
-            start_automated_ml_training()
-            print("✅ Automated ML training scheduler is running")
+            from incremental_learning import IncrementalMLTrainer
+            print("🤖 Verifying incremental learning system...")
+            trainer = IncrementalMLTrainer()
+            stats = trainer.get_cumulative_stats()
+            # Print summary of current state
+            for model_name in ['trend', 'signal', 'regime']:
+                if model_name in stats:
+                    print(f"✅ {model_name.upper()}: {stats[model_name]['total_samples_seen']:,} samples trained")
+            print("🎯 Incremental learning system ready")
         except Exception as e:
-            print(f"⚠️ Failed to start ML scheduler: {e}")
-            # Don't fail the entire app if ML scheduler fails
+            print(f"⚠️ Failed to initialize incremental learning: {e}")
+            # Don't fail the entire app if ML system isn't available
 
         # Configure Flask for production by default; override with FLASK_DEBUG=1
         flask_host = os.getenv('FLASK_HOST', '0.0.0.0')
