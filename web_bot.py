@@ -1565,14 +1565,14 @@ def detect_market_regime():
         price_change_24h = abs((btc_1h['close'].iloc[-1] - btc_1h['close'].iloc[-24]) / btc_1h['close'].iloc[-24])
         
         # Market regime classification
-        if (current_hourly_vol > 1.5 or current_5m_vol > 2.0 or 
-            volume_surge > 3.0 or price_change_1h > 0.05):
+        if (current_hourly_vol > 1.2 or current_5m_vol > 1.5 or 
+            volume_surge > 2.5 or price_change_1h > 0.03):
             regime = 'EXTREME'
-        elif (current_hourly_vol > 0.8 or current_5m_vol > 1.2 or 
-              volume_surge > 2.0 or price_change_1h > 0.03):
+        elif (current_hourly_vol > 0.6 or current_5m_vol > 0.9 or 
+              volume_surge > 1.5 or price_change_1h > 0.02):
             regime = 'VOLATILE'
-        elif (current_hourly_vol < 0.3 and current_5m_vol < 0.5 and 
-              volume_surge < 1.2 and price_change_1h < 0.01):
+        elif (current_hourly_vol < 0.2 and current_5m_vol < 0.3 and 
+              volume_surge < 1.1 and price_change_1h < 0.01):
             regime = 'QUIET'
         else:
             regime = 'NORMAL'
@@ -1744,7 +1744,7 @@ def calculate_smart_interval():
                 hunting_triggers += 1  # Hot streak
                 
         # Determine final interval
-        if hunting_triggers >= 3 or current_regime == 'EXTREME':
+        if hunting_triggers >= 2 or current_regime in ['EXTREME', 'VOLATILE']:  # Lowered from 3 to 2 triggers
             bot_status['hunting_mode'] = True
             interval = base_intervals.get('HUNTING', 30)
             mode = 'HUNTING'

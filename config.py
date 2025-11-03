@@ -161,9 +161,9 @@ TIMING_SYSTEM = {
     'hunting_mode_triggers': 3,     # Number of triggers needed for hunting mode
     'max_quick_scans': 5,          # Maximum quick scans before full scan
     'volatility_thresholds': {
-        'extreme': 1.5,            # Hourly volatility threshold for extreme regime
-        'volatile': 0.8,           # Hourly volatility threshold for volatile regime
-        'quiet': 0.3               # Hourly volatility threshold for quiet regime
+        'extreme': 1.2,            # Lowered threshold for extreme regime
+        'volatile': 0.6,           # Lowered threshold for volatile regime
+        'quiet': 0.2               # Lowered threshold for quiet regime
     },
     'volume_surge_thresholds': {
         'extreme': 3.0,            # Volume surge multiplier for extreme conditions
