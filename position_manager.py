@@ -19,6 +19,40 @@ class AdvancedPositionManager:
         self.volatility_cache = {}
         self.position_history = []
         self.max_position_history = 100
+        self.correlation_cache = {}  # Cache for correlation calculations
+        
+    def check_correlation_risk(self, new_symbol: str, current_positions: list) -> Dict:
+        """
+        Check correlation risk for new position
+        Returns dict with risk assessment and position size multiplier
+        """
+        if len(current_positions) == 0:
+            return {'approved': True, 'multiplier': 1.0, 'reason': 'No existing positions'}
+            
+        # Count highly correlated pairs
+        high_correlation_count = 0
+        correlation_threshold = 0.7  # Consider pairs with >70% correlation
+        
+        for pos in current_positions:
+            correlation = self.correlation_cache.get(f"{new_symbol}_{pos['symbol']}", 0.5)
+            if correlation > correlation_threshold:
+                high_correlation_count += 1
+                
+        # Risk assessment based on correlation
+        if high_correlation_count >= 2:
+            return {
+                'approved': False,
+                'multiplier': 0.0,
+                'reason': f'Too many correlated positions ({high_correlation_count})'
+            }
+        elif high_correlation_count == 1:
+            return {
+                'approved': True,
+                'multiplier': 0.7,  # Reduce size by 30%
+                'reason': 'Moderate correlation detected'
+            }
+            
+        return {'approved': True, 'multiplier': 1.0, 'reason': 'Low correlation risk'}
     
     def calculate_optimal_position_size(self, 
                                       symbol: str, 
@@ -55,15 +89,29 @@ class AdvancedPositionManager:
             # 5. Kelly Criterion estimate (simplified)
             kelly_factor = self._estimate_kelly_factor(symbol, signal)
             
-            # Combine all factors
+            # Check correlation risk
+            correlation_check = self.check_correlation_risk(symbol, 
+                getattr(config, 'ACTIVE_POSITIONS', []))
+            correlation_factor = correlation_check['multiplier']
+            
+            # Enhanced risk factor calculation
             total_risk_factor = (
                 base_risk_pct * 
                 volatility_factor * 
                 confidence_factor * 
                 regime_factor * 
                 heat_factor * 
-                kelly_factor
+                kelly_factor * 
+                correlation_factor  # Apply correlation adjustment
             )
+            
+            # Additional safeguards for bearish markets
+            if market_regime == 'BEARISH':
+                total_risk_factor *= 0.5  # 50% reduction in bearish markets
+                
+            # Volatility circuit breaker
+            if volatility > 1.2:  # Extreme volatility
+                total_risk_factor *= 0.3  # 70% reduction
             
             # Calculate position size
             risk_amount = account_balance * total_risk_factor
@@ -111,13 +159,21 @@ class AdvancedPositionManager:
     
     def _calculate_volatility_factor(self, volatility: float, market_regime: str) -> float:
         """
-        Adjust position size based on volatility
-        Higher volatility = smaller positions
+        Enhanced volatility-based position sizing with market regime consideration
         """
-        # Base volatility thresholds
-        low_vol = 0.2
+        # Dynamic volatility thresholds
+        extreme_vol = 1.2
+        high_vol = 0.8
         medium_vol = 0.5
-        high_vol = 1.0
+        low_vol = 0.2
+        
+        # Market regime multipliers
+        regime_multipliers = {
+            'BEARISH': 0.5,    # 50% reduction in bearish markets
+            'VOLATILE': 0.7,   # 30% reduction in volatile markets
+            'EXTREME': 0.5,    # 50% reduction in extreme conditions
+            'NORMAL': 1.0      # No reduction in normal markets
+        }
         
         # Regime-specific adjustments
         regime_multipliers = {
@@ -233,30 +289,60 @@ class AdvancedPositionManager:
                         current_price: float,
                         entry_price: float,
                         unrealized_pnl_pct: float,
-                        position_age_minutes: int) -> Dict:
+                        position_age_minutes: int,
+                        market_regime: str = "NORMAL",
+                        volatility: float = None) -> Dict:
         """
-        Determine if we should scale out of a profitable position
+        Enhanced scale out logic with volatility and market regime consideration
         """
+        # Dynamic scale out thresholds based on market conditions
         scale_out_config = {
-            'first_target_pct': 2.0,    # Scale out 30% at 2% profit
-            'second_target_pct': 4.0,   # Scale out 50% at 4% profit
-            'time_based_pct': 1.0,      # Scale out if held >4 hours with 1% profit
-            'max_hold_minutes': 240     # 4 hours
+            'NORMAL': {
+                'first_target_pct': 2.0,     # Scale 30% at 2% profit
+                'second_target_pct': 4.0,    # Scale 50% at 4% profit
+                'time_based_pct': 1.0,       # Scale if >4h with 1% profit
+                'max_hold_minutes': 240      # 4 hours
+            },
+            'VOLATILE': {
+                'first_target_pct': 1.0,     # Scale 30% at 1% profit
+                'second_target_pct': 2.0,    # Scale 50% at 2% profit
+                'time_based_pct': 0.5,       # Scale if >2h with 0.5% profit
+                'max_hold_minutes': 120      # 2 hours
+            },
+            'BEARISH': {
+                'first_target_pct': 0.8,     # Scale 30% at 0.8% profit
+                'second_target_pct': 1.5,    # Scale 50% at 1.5% profit
+                'time_based_pct': 0.4,       # Scale if >1h with 0.4% profit
+                'max_hold_minutes': 60       # 1 hour
+            }
         }
         
         should_scale = False
         scale_percentage = 0
         reason = ""
         
-        # Profit-based scaling
-        if unrealized_pnl_pct >= scale_out_config['second_target_pct']:
+        # Get regime-specific config
+        regime_config = scale_out_config.get(market_regime, scale_out_config['NORMAL'])
+        
+        # Emergency exit in extreme conditions
+        if volatility and volatility > 1.2:  # Extreme volatility
+            if unrealized_pnl_pct > 0:
+                return {
+                    'should_scale': True,
+                    'scale_percentage': 100,  # Full exit
+                    'reason': f"Emergency exit: Extreme volatility {volatility:.2f}",
+                    'targets': regime_config
+                }
+        
+        # Smart profit taking based on market regime
+        if unrealized_pnl_pct >= regime_config['second_target_pct']:
             should_scale = True
-            scale_percentage = 50  # Scale out 50%
-            reason = f"Hit second profit target: {unrealized_pnl_pct:.1f}%"
-        elif unrealized_pnl_pct >= scale_out_config['first_target_pct']:
+            scale_percentage = 75 if market_regime == 'BEARISH' else 50
+            reason = f"Hit second target: {unrealized_pnl_pct:.1f}% ({market_regime} market)"
+        elif unrealized_pnl_pct >= regime_config['first_target_pct']:
             should_scale = True
-            scale_percentage = 30  # Scale out 30%
-            reason = f"Hit first profit target: {unrealized_pnl_pct:.1f}%"
+            scale_percentage = 50 if market_regime == 'BEARISH' else 30
+            reason = f"Hit first target: {unrealized_pnl_pct:.1f}% ({market_regime} market)"
         
         # Time-based scaling
         elif (position_age_minutes >= scale_out_config['max_hold_minutes'] and 
